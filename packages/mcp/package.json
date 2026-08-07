@@ -6,11 +6,14 @@
   "bin": {
     "ngcms-mcp": "./dist/stdio.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "start:http": "node dist/http.js"
+    "start:http": "node dist/http.js",
+    "prepare": "tsup"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",

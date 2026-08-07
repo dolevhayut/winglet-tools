@@ -22,7 +22,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare": "tsup"
   },
   "dependencies": {
     "zod": "^4.4.3"
