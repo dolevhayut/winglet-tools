@@ -68,7 +68,7 @@ interface RawResponse {
 }
 
 export interface RequestOptions {
-  readonly method?: 'GET' | 'POST'
+  readonly method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
   readonly key?: string
   readonly body?: unknown
   /** §14.1 counts anonymous project creation per client address. */
@@ -360,5 +360,198 @@ export async function fetchUsage(
   return {
     plan: typeof planValue === 'string' ? planValue : undefined,
     counters: counters.sort((a, b) => a.name.localeCompare(b.name)),
+  }
+}
+
+/* ── the Management API: /documents (write-scoped) ────────────────────────── */
+
+/**
+ * §9's whole Management API — list, read, create, edit, publish, delete —
+ * requires a WRITE key. There is no read-only door into it; a read key only
+ * ever unlocks the public Content API (`fetchContentSnapshot` above), which
+ * serves published data and knows nothing about drafts or document ids.
+ */
+
+export interface DocumentSummary {
+  readonly id: string
+  readonly type: string
+  readonly slug: string
+  readonly status: string
+}
+
+export interface DocumentRecord {
+  readonly id: string
+  readonly type: string
+  readonly slug: string
+  readonly status: string
+  readonly locale: string
+  readonly data: Readonly<Record<string, unknown>>
+  readonly publishedData: Readonly<Record<string, unknown>> | undefined
+  readonly updatedAt: string
+}
+
+function requireRecord(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  where: string,
+): Readonly<Record<string, unknown>> {
+  const value = asRecord(record[key])
+  if (value === undefined) {
+    throw new CliError(`The API returned an unexpected ${where}: "${key}" is missing or not an object.`, EXIT.error)
+  }
+  return value
+}
+
+function parseDocumentSummary(value: unknown): DocumentSummary | undefined {
+  const record = asRecord(value)
+  if (record === undefined) return undefined
+  return {
+    id: requireString(record, 'id', 'document'),
+    type: requireString(record, 'type_key', 'document'),
+    slug: requireString(record, 'slug', 'document'),
+    status: requireString(record, 'status', 'document'),
+  }
+}
+
+function parseDocumentRecord(body: unknown): DocumentRecord {
+  const root = asRecord(body)
+  const document = root === undefined ? undefined : asRecord(root['document'])
+  if (document === undefined) {
+    throw new CliError('The API returned an unexpected document payload.', EXIT.error)
+  }
+
+  const published = asRecord(document['published_data'])
+
+  return {
+    id: requireString(document, 'id', 'document'),
+    type: requireString(document, 'type_key', 'document'),
+    slug: requireString(document, 'slug', 'document'),
+    status: requireString(document, 'status', 'document'),
+    locale: requireString(document, 'locale', 'document'),
+    data: requireRecord(document, 'data', 'document'),
+    publishedData: published,
+    updatedAt: requireString(document, 'updated_at', 'document'),
+  }
+}
+
+export interface ManagementClientOptions {
+  readonly baseUrl: string
+  readonly writeKey: string
+  readonly fetchImpl?: typeof fetch | undefined
+}
+
+function withFetch(fetchImpl: typeof fetch | undefined): { fetchImpl?: typeof fetch } {
+  return fetchImpl === undefined ? {} : { fetchImpl }
+}
+
+export async function listDocuments(
+  options: ManagementClientOptions,
+  type?: string,
+): Promise<readonly DocumentSummary[]> {
+  const query = type === undefined ? '' : `?type=${encodeURIComponent(type)}`
+  const url = `${options.baseUrl}/documents${query}`
+  const body = await json(url, { key: options.writeKey, ...withFetch(options.fetchImpl) })
+  const root = asRecord(body)
+  const documents = root === undefined ? undefined : root['documents']
+  if (!Array.isArray(documents)) {
+    throw new CliError('The API returned an unexpected document list.', EXIT.error)
+  }
+  return documents.flatMap((entry) => {
+    const summary = parseDocumentSummary(entry)
+    return summary === undefined ? [] : [summary]
+  })
+}
+
+export async function getDocument(
+  options: ManagementClientOptions,
+  id: string,
+): Promise<DocumentRecord> {
+  const url = `${options.baseUrl}/documents/${encodeURIComponent(id)}`
+  const body = await json(url, { key: options.writeKey, ...withFetch(options.fetchImpl) })
+  return parseDocumentRecord(body)
+}
+
+export interface CreateDocumentInput {
+  readonly type: string
+  readonly slug: string
+  readonly data: Readonly<Record<string, unknown>>
+  readonly locale?: string | undefined
+}
+
+export async function createDocument(
+  options: ManagementClientOptions,
+  input: CreateDocumentInput,
+): Promise<DocumentRecord> {
+  const url = `${options.baseUrl}/documents`
+  const body = await json(url, {
+    method: 'POST',
+    key: options.writeKey,
+    body: {
+      type_key: input.type,
+      slug: input.slug,
+      data: input.data,
+      ...(input.locale === undefined ? {} : { locale: input.locale }),
+    },
+    ...withFetch(options.fetchImpl),
+  })
+  return parseDocumentRecord(body)
+}
+
+export async function updateDocumentData(
+  options: ManagementClientOptions,
+  id: string,
+  data: Readonly<Record<string, unknown>>,
+): Promise<DocumentRecord> {
+  const url = `${options.baseUrl}/documents/${encodeURIComponent(id)}`
+  const body = await json(url, {
+    method: 'PATCH',
+    key: options.writeKey,
+    body: { data },
+    ...withFetch(options.fetchImpl),
+  })
+  return parseDocumentRecord(body)
+}
+
+export interface PublishResult {
+  readonly documentId: string
+  readonly contentVersion: number | undefined
+}
+
+export async function publishDocument(
+  options: ManagementClientOptions,
+  id: string,
+): Promise<PublishResult> {
+  const url = `${options.baseUrl}/documents/${encodeURIComponent(id)}/publish`
+  const body = await json(url, {
+    method: 'POST',
+    key: options.writeKey,
+    ...withFetch(options.fetchImpl),
+  })
+  const root = asRecord(body)
+  if (root === undefined) {
+    throw new CliError('The API returned an unexpected publish payload.', EXIT.error)
+  }
+  return {
+    documentId: requireString(root, 'document_id', 'publish result'),
+    contentVersion: optionalNumber(root, 'content_version'),
+  }
+}
+
+export interface DeleteResult {
+  readonly deleted: boolean
+  readonly contentVersion: number | undefined
+}
+
+export async function deleteDocument(
+  options: ManagementClientOptions,
+  id: string,
+): Promise<DeleteResult> {
+  const url = `${options.baseUrl}/documents/${encodeURIComponent(id)}`
+  const raw = await send(url, { method: 'DELETE', key: options.writeKey, ...withFetch(options.fetchImpl) })
+  if (raw.status < 200 || raw.status >= 300) throw apiFailure(url, raw)
+  const root = asRecord(raw.body)
+  return {
+    deleted: root?.['deleted'] === true,
+    contentVersion: root === undefined ? undefined : optionalNumber(root, 'content_version'),
   }
 }

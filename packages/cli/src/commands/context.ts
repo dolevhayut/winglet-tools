@@ -89,6 +89,25 @@ export function loadProjectContext(io: Io, options: CommonOptions): ProjectConte
   }
 }
 
+/**
+ * The Management API (`list`, `get`, `create`, `edit`, `publish`, `delete`) is
+ * write-scoped end to end — there is no read-only door into it, unlike the
+ * public Content API a read key unlocks. A build-only checkout that ran `link`
+ * with only `--read-key` has no way to use these commands, and that failure
+ * has to say so precisely rather than surface as an opaque 401 from the API.
+ */
+export function requireWriteKey(context: ProjectContext): string {
+  if (context.writeKey === undefined) {
+    throw new CliError(
+      `A write key is required for this command, and none is configured in ${context.root}.`,
+      EXIT.error,
+      `Set ${ENV.writeKey}, or re-run \`${CLI_BIN} link ${context.projectId} --read-key <key> ` +
+        '--write-key <key>` with the project’s write key.',
+    )
+  }
+  return context.writeKey
+}
+
 /* ── output ───────────────────────────────────────────────────────────────── */
 
 /**

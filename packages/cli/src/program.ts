@@ -5,10 +5,22 @@ import { Command, CommanderError } from 'commander'
 
 import { claimCommand } from './commands/claim'
 import type { ClaimOptions } from './commands/claim'
+import { createCommand } from './commands/create'
+import type { CreateOptions } from './commands/create'
+import { deleteCommand } from './commands/delete'
+import type { DeleteOptions } from './commands/delete'
+import { editCommand } from './commands/edit'
+import type { EditOptions } from './commands/edit'
+import { getCommand } from './commands/get'
+import type { GetOptions } from './commands/get'
 import { initCommand } from './commands/init'
 import type { InitOptions } from './commands/init'
 import { linkCommand } from './commands/link'
 import type { LinkOptions } from './commands/link'
+import { listCommand } from './commands/list'
+import type { ListOptions } from './commands/list'
+import { publishCommand } from './commands/publish'
+import type { PublishOptions } from './commands/publish'
 import { pullCommand } from './commands/pull'
 import type { PullOptions } from './commands/pull'
 import { typesCommand } from './commands/types'
@@ -21,12 +33,19 @@ import { MARK, line } from './io'
 import type { Io } from './io'
 
 /**
- * §11's six commands, wired to a real argument parser.
+ * §11's six project-setup commands, plus content editing: `list`, `get`,
+ * `create`, `edit`, `publish`, `delete` mirror the MCP server's five tools
+ * (list_documents/get_document/create_document/update_document/publish) so
+ * an agent can edit content from the same CLI it used to connect the site,
+ * with no separate MCP install. `delete` is the one operation MCP does not
+ * expose at all.
  *
  * NOTHING HERE IS INTERACTIVE. Every command takes flags with defaults; there
  * is no prompt, no confirmation, no `--yes`, and no code path in this package
  * reads stdin. `--json` on every command gives an agent a single parseable
- * object instead of prose.
+ * object instead of prose — `list` and `get` skip the flag entirely and are
+ * always JSON, since nothing about "here is a document's raw data" benefits
+ * from a prose rendering.
  *
  * The parser is configured never to call `process.exit` itself: `run()` returns
  * the exit code and the binary assigns it, so the whole CLI is callable
@@ -37,6 +56,11 @@ const CWD_FLAG = '-C, --cwd <dir>'
 const CWD_HELP = 'project directory (default: the nearest package.json)'
 const JSON_HELP = 'print a single JSON object instead of human-readable output'
 const API_URL_HELP = 'API base URL (default: the configured or built-in one)'
+
+/** Commander's accumulator for a repeatable `--set field=value` flag. */
+function collectSet(value: string, previous: readonly string[]): string[] {
+  return [...previous, value]
+}
 
 function version(): string {
   try {
@@ -82,6 +106,13 @@ export function buildProgram(io: Io): Command {
       `  npx ${CLI_BIN} init            create a project and wire it into this site`,
       `  npx ${CLI_BIN} types           refresh ${TYPES_FILE} after a CLI upgrade`,
       `  npx ${CLI_BIN} claim           reprint the owner adoption link`,
+      '',
+      'Editing content:',
+      `  ${CLI_BIN} list                    every document, id/type/slug/status`,
+      `  ${CLI_BIN} get <id>                one document in full`,
+      `  ${CLI_BIN} create --type --slug    a new draft`,
+      `  ${CLI_BIN} edit <id> --set k=v     change fields in the draft`,
+      `  ${CLI_BIN} publish <id>            the draft goes live`,
       '',
       `Content is read at build time through ${SDK_PACKAGE}. Exit codes: 0 ok, 1 error,`,
       '2 unsupported environment, 3 limit or network.',
@@ -159,6 +190,76 @@ export function buildProgram(io: Io): Command {
     .option('--json', JSON_HELP)
     .action(async (projectId: string, options: LinkOptions) => {
       await linkCommand(io, projectId, options)
+    })
+
+  program
+    .command('list')
+    .description('list this project’s documents (always JSON)')
+    .option('--type <type>', 'restrict to one content type')
+    .option('--status <status>', 'restrict to one status, e.g. draft or published')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .action(async (options: ListOptions) => {
+      await listCommand(io, options)
+    })
+
+  program
+    .command('get')
+    .argument('<id>', 'the document id, from `list`')
+    .description('read one document in full (always JSON)')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .action(async (id: string, options: GetOptions) => {
+      await getCommand(io, id, options)
+    })
+
+  program
+    .command('create')
+    .description('create a new draft document')
+    .requiredOption('--type <type>', 'the content type, e.g. page or post')
+    .requiredOption('--slug <slug>', 'lowercase letters, digits and hyphens')
+    .option('--data <json>', 'the fields as a JSON object, or @path to a file')
+    .option('--locale <locale>', 'defaults to the project’s default locale')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (options: CreateOptions) => {
+      await createCommand(io, options)
+    })
+
+  program
+    .command('edit')
+    .argument('<id>', 'the document id, from `list`')
+    .description('change fields in a document’s draft — never the whole thing')
+    .option('--set <field=value...>', 'repeatable; dot-path, e.g. seo.title=Hello', collectSet, [])
+    .option('--data <json>', 'a JSON object of {"path.to.field": value}, or @path to a file')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (id: string, options: EditOptions) => {
+      await editCommand(io, id, options)
+    })
+
+  program
+    .command('publish')
+    .argument('<id>', 'the document id, from `list`')
+    .description('publish a document — the only command that changes the live site')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (id: string, options: PublishOptions) => {
+      await publishCommand(io, id, options)
+    })
+
+  program
+    .command('delete')
+    .argument('<id>', 'the document id, from `list`')
+    .description('delete a document — no confirmation prompt (§11: nothing here is interactive)')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (id: string, options: DeleteOptions) => {
+      await deleteCommand(io, id, options)
     })
 
   return program
