@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
-  "name": "io.github.dolevhayut/ngcms",
+  "name": "io.github.dolevhayut/winglet",
   "description": "Edit the content of a Next.js site without running an agent. List, read, create, update and publish pages, posts and products in a hosted CMS built for sites that coding agents produced.",
   "version": "0.1.0",
-  "websiteUrl": "https://ngcms.dev",
+  "websiteUrl": "https://winglet.dev",
   "repository": {
-    "url": "https://github.com/dolevhayut/ngcms",
+    "url": "https://github.com/dolevhayut/winglet",
     "source": "github"
   },
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "dolevhayut/ngcms-mcp",
+      "identifier": "dolevhayut/winglet-mcp",
       "version": "0.1.0",
       "transport": {
         "type": "streamable-http",
@@ -19,7 +19,7 @@
       },
       "environmentVariables": [
         {
-          "name": "NGCMS_API_URL",
+          "name": "WINGLET_API_URL",
           "description": "Base URL of the content API. Defaults to the hosted one.",
           "isRequired": false
         }
@@ -29,7 +29,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://mcp.ngcms.dev/mcp",
+      "url": "https://mcp.winglet.dev/mcp",
       "headers": [
         {
           "name": "Authorization",

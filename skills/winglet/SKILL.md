@@ -1,5 +1,5 @@
 ---
-name: ngcms
+name: winglet
 description: Move hard-coded text out of a Next.js site and into a CMS the site owner can edit themselves, so changing a sentence never costs another agent run. Use when a Next.js App Router project has copy, prices, hours or contact details written directly in JSX, when the user says the client keeps asking them for text changes, or when they ask for a CMS, content management, or an editable site.
 ---
 
@@ -25,7 +25,7 @@ credit card. It writes `.env.local`, generates types, seeds four content types,
 and prints one link the owner clicks to start editing.
 
 ```bash
-npx ngcms init
+npx winglet init
 ```
 
 Exit codes: `0` ok · `1` error · `2` not a Next.js App Router project · `3`
@@ -60,7 +60,7 @@ Work one page at a time and keep the site building between steps.
 4. **Replace the literals with a typed read:**
 
 ```tsx
-import { getPage } from '@ngcms/next'
+import { getPage } from '@winglet/next'
 
 export default async function Home() {
   const home = await getPage('home')
@@ -78,7 +78,7 @@ export default async function Home() {
 Server components only. The key is server-side and must never reach the browser.
 
 ```ts
-import { getPage, getPost, getPosts, getProduct, getProducts, getAll } from '@ngcms/next'
+import { getPage, getPost, getPosts, getProduct, getProducts, getAll } from '@winglet/next'
 
 const home     = await getPage('home')          // one document, or null
 const posts    = await getPosts({ limit: 10, tag: 'ai' })

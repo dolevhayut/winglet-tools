@@ -11,7 +11,7 @@ than at `npx`, so none of them has to change if that decision changes.
 | Target | What to submit | Where |
 |---|---|---|
 | MCP Registry (official) | `mcp-server.json` | https://github.com/modelcontextprotocol/registry — read its CONTRIBUTING first; it is a PR against the registry repo |
-| Claude Code / agent skills | the `skills/ngcms/` directory | publish as a git repo, then `npx skills add <owner>/<repo>` |
+| Claude Code / agent skills | the `skills/winglet/` directory | publish as a git repo, then `npx skills add <owner>/<repo>` |
 | Smithery | `mcp-server.json` + the Docker image | https://smithery.ai — connects a GitHub repo |
 | Glama MCP directory | repo URL | https://glama.ai/mcp/servers |
 | awesome-mcp-servers | one line in the README | https://github.com/punkpeye/awesome-mcp-servers |

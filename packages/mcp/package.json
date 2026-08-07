@@ -1,10 +1,10 @@
 {
-  "name": "@ngcms/mcp",
+  "name": "@winglet/mcp",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "ngcms-mcp": "./dist/stdio.js"
+    "winglet-mcp": "./dist/stdio.js"
   },
   "files": [
     "dist"

@@ -8,16 +8,16 @@
  * Nothing below may be re-typed as a literal anywhere else in the repo.
  * `tools/guards/product-slug.test.ts` fails the build if it is.
  *
- * Acronym of "New Generation Content Management System". Verified free at the
- * time of writing: the unscoped npm name (required for `npx <slug> init`), the
- * npm scope, and the .dev domain.
+ * A winglet is a small structure at the wing tip that reduces drag across the
+ * whole aircraft — the metaphor for a small CMS layer that removes the drag of
+ * routine content edits from the coding agent's loop.
  */
-export const PRODUCT_SLUG = 'ngcms' as const
+export const PRODUCT_SLUG = 'winglet' as const
 
 const upper = PRODUCT_SLUG.toUpperCase()
 
 /** Display name for UI chrome and CLI output. Derived, so it renames with the slug. */
-export const PRODUCT_NAME = upper
+export const PRODUCT_NAME = 'Winglet' as const
 
 /* ── npm identity ─────────────────────────────────────────────────────────── */
 

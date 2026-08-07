@@ -1,4 +1,4 @@
-# NGCMS — client tools
+# Winglet — client tools
 
 The open parts of an agent-first CMS: the SDK a site reads content with, the CLI
 that wires a site up, the MCP server an agent edits through, and the agent skill.
@@ -10,13 +10,13 @@ you are the one running it.
 ## Install the skill
 
 ```bash
-npx skills add dolevhayut/ngcms-tools
+npx skills add dolevhayut/winglet-tools
 ```
 
 ## Connect a site
 
 ```bash
-npx ngcms init
+npx winglet init
 ```
 
 Creates a content project, writes `.env.local`, generates types and prints one
@@ -26,7 +26,7 @@ safe to run unattended.
 ## Read content
 
 ```ts
-import { getPage, getPosts } from '@ngcms/next'
+import { getPage, getPosts } from '@winglet/next'
 
 const home = await getPage('home')
 ```
@@ -40,17 +40,17 @@ An MCP server exposes `list_documents`, `get_document`, `create_document`,
 `update_document` and `publish`.
 
 ```bash
-claude mcp add ngcms --transport http https://mcp.ngcms.dev/mcp
+claude mcp add winglet --transport http https://mcp.winglet.dev/mcp
 ```
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `packages/sdk` | `@ngcms/next` — typed content client and typegen |
-| `packages/cli` | `npx ngcms` — init, types, pull, claim, usage, link |
+| `packages/sdk` | `@winglet/next` — typed content client and typegen |
+| `packages/cli` | `npx winglet` — init, types, pull, claim, usage, link |
 | `packages/mcp` | MCP server, stdio and Streamable HTTP |
-| `skills/ngcms` | The agent skill |
+| `skills/winglet` | The agent skill |
 | `product.config.ts` | The single source of the product's identity. **Canonical copy.** |
 
 ## Development
