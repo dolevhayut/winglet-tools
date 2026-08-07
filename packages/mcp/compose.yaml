@@ -1,0 +1,17 @@
+# Temporary local hosting for the MCP server.
+#
+# `host.docker.internal` is how the container reaches the API running on the
+# host. On Linux the extra_hosts line below is what makes that name resolve;
+# on macOS Docker Desktop provides it already.
+services:
+  mcp:
+    build:
+      context: ../..
+      dockerfile: packages/mcp/Dockerfile
+    ports:
+      - '8787:8080'
+    environment:
+      NGCMS_API_URL: http://host.docker.internal:3001/v1
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    restart: unless-stopped

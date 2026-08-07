@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.dolevhayut/ngcms",
+  "description": "Edit the content of a Next.js site without running an agent. List, read, create, update and publish pages, posts and products in a hosted CMS built for sites that coding agents produced.",
+  "version": "0.1.0",
+  "websiteUrl": "https://ngcms.dev",
+  "repository": {
+    "url": "https://github.com/dolevhayut/ngcms",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "dolevhayut/ngcms-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:8787/mcp"
+      },
+      "environmentVariables": [
+        {
+          "name": "NGCMS_API_URL",
+          "description": "Base URL of the content API. Defaults to the hosted one.",
+          "isRequired": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.ngcms.dev/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <project write key>. Printed by the CLI during setup and shown in the studio.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "ngcms-tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.13.1",
+  "engines": { "node": ">=20.11" },
+  "scripts": {
+    "typecheck": "pnpm -r --parallel typecheck && tsc -p tsconfig.guards.json --noEmit",
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "guards": "vitest run tools/guards"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "overrides": { "typescript": "5.9.3" },
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}

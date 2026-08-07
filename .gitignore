@@ -1,0 +1,23 @@
+node_modules/
+dist/
+build/
+out/
+coverage/
+.next/
+.turbo/
+*.tsbuildinfo
+
+.env
+.env.local
+.env.*.local
+
+.supabase/
+supabase/.branches/
+supabase/.temp/
+
+# Uploaded media, when the local-disk storage adapter is in use (dev + tests).
+apps/api/.storage/
+.storage/
+
+.DS_Store
+*.log
