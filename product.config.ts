@@ -61,7 +61,7 @@ export const MCP_URL = `${MCP_ORIGIN}/mcp` as const
 
 /** The agent skill, published as a directory in the public repo. */
 export const GITHUB_ORG = 'dolevhayut' as const
-export const REPO_URL = `https://github.com/${GITHUB_ORG}/${PRODUCT_SLUG}` as const
+export const REPO_URL = `https://github.com/${GITHUB_ORG}/${PRODUCT_SLUG}-tools` as const
 export const SKILL_URL = `${REPO_URL}/tree/main/skills/${PRODUCT_SLUG}` as const
 
 /** `npx {slug} init` — the one line a developer copies. */
