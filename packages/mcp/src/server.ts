@@ -72,6 +72,40 @@ function result(value: unknown): { content: { type: 'text'; text: string }[] } {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] }
 }
 
+/* ── patching ─────────────────────────────────────────────────────────────── */
+
+function isPlainObject(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Sets one dot-path on an immutable copy of `base`. Only the spine leading to
+ * the changed field is copied; every other branch keeps its reference.
+ *
+ * The same operation the CLI's `edit --set` performs. It is duplicated here
+ * rather than imported because the CLI's copy throws `CliError` with a process
+ * exit code, which is meaningless inside a tool call.
+ */
+function applySet(
+  base: Readonly<Record<string, unknown>>,
+  path: readonly string[],
+  value: unknown,
+): Record<string, unknown> {
+  const [head, ...rest] = path
+  if (head === undefined) return { ...base }
+  if (rest.length === 0) return { ...base, [head]: value }
+
+  const existing = base[head]
+  if (existing !== undefined && !isPlainObject(existing)) {
+    throw new Error(
+      `Cannot set "${path.join('.')}" — "${head}" holds a ${
+        Array.isArray(existing) ? 'list' : typeof existing
+      }, not an object. Set "${head}" as a whole instead.`,
+    )
+  }
+  return { ...base, [head]: applySet(isPlainObject(existing) ? existing : {}, rest, value) }
+}
+
 /* ── the server ───────────────────────────────────────────────────────────── */
 
 const CONTENT_TYPES = ['page', 'post', 'product', 'collection'] as const
@@ -87,6 +121,10 @@ export function buildServer(config: ServerConfig): McpServer {
       inputSchema: z.object({
         type: z.enum(CONTENT_TYPES).optional().describe('Restrict to one content type.'),
       }),
+      // The hints are what let a client tell a lookup from a change to a live
+      // site. Without them every tool looks equally consequential, so a client
+      // either confirms all of them or none.
+      annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ type }) => {
       const query = type === undefined ? '' : `?type=${encodeURIComponent(type)}`
@@ -111,6 +149,7 @@ export function buildServer(config: ServerConfig): McpServer {
     {
       description: 'Read one document in full, including every field, by its id.',
       inputSchema: z.object({ id: z.string().describe('The document id from list_documents.') }),
+      annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ id }) => result(await call(config, `/documents/${encodeURIComponent(id)}`)),
   )
@@ -129,6 +168,7 @@ export function buildServer(config: ServerConfig): McpServer {
           .record(z.string(), z.unknown())
           .describe('The fields. Shop-specific extras belong under a "custom" object.'),
       }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     async ({ type, slug, data }) =>
       result(
@@ -143,19 +183,52 @@ export function buildServer(config: ServerConfig): McpServer {
     'update_document',
     {
       description:
-        'Change a document. This edits the DRAFT only — the live site is untouched until publish is called. Pass the complete data object; it replaces the previous one.',
+        'Change specific fields of a document. This edits the DRAFT only — the live site is untouched until publish is called. Pass ONLY the fields you are changing, keyed by dot path: {"custom.hours": "…", "seo.title": "…"}. Everything you do not name is left exactly as it was.',
       inputSchema: z.object({
         id: z.string(),
-        data: z.record(z.string(), z.unknown()),
+        data: z
+          .record(z.string(), z.unknown())
+          .describe('Only the fields to change, keyed by dot path, e.g. {"seo.title": "Hello"}.'),
       }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    async ({ id, data }) =>
-      result(
+    /*
+     * READ, SET THE NAMED PATHS, WRITE THE WHOLE THING BACK.
+     *
+     * `PATCH /documents/:id` REPLACES `data`; it does not merge. This tool used
+     * to hand the caller's object straight to it and describe that as "pass the
+     * complete data object" — but an agent told to change a tagline passes a
+     * tagline, and the entire rest of the document was silently deleted.
+     * Observed, not theorised: one `update_document` call reduced a seven-field
+     * page to a single key, and only the published snapshot saved the site.
+     *
+     * The keys are dot paths for the same reason the CLI's `--set` and the
+     * studio's editor use them: "this field becomes this value, nothing else
+     * moves" has exactly one meaning, where a deep merge has several.
+     */
+    async ({ id, data }) => {
+      const current = (await call(config, `/documents/${encodeURIComponent(id)}`)) as {
+        document?: { data?: unknown }
+      }
+      const stored = isPlainObject(current.document?.data) ? current.document.data : {}
+
+      let merged: Record<string, unknown> = { ...stored }
+      for (const [rawPath, value] of Object.entries(data)) {
+        const path = rawPath
+          .split('.')
+          .map((segment) => segment.trim())
+          .filter((segment) => segment.length > 0)
+        if (path.length === 0) throw new Error(`Empty field path in "${rawPath}".`)
+        merged = applySet(merged, path, value)
+      }
+
+      return result(
         await call(config, `/documents/${encodeURIComponent(id)}`, {
           method: 'PATCH',
-          body: { data },
+          body: { data: merged },
         }),
-      ),
+      )
+    },
   )
 
   server.registerTool(
@@ -164,6 +237,10 @@ export function buildServer(config: ServerConfig): McpServer {
       description:
         'Publish a document to the live site. This is the only tool that changes what visitors see: it snapshots the draft and triggers the site to refresh.',
       inputSchema: z.object({ id: z.string() }),
+      // The only tool whose effect is visible to the public. Not 'destructive' —
+      // it adds a snapshot rather than removing anything — but a client should
+      // treat it as the consequential one.
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
     async ({ id }) =>
       result(
