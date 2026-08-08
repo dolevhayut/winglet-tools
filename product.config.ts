@@ -67,9 +67,33 @@ export const SKILL_URL = `${REPO_URL}/tree/main/skills/${PRODUCT_SLUG}` as const
 /** `npx {slug} init` — the one line a developer copies. */
 export const INSTALL_COMMAND = `npx ${PRODUCT_SLUG} init` as const
 
-export const claimUrl = (token: string): string => `${STUDIO_ORIGIN}/claim/${token}`
+/**
+ * Where the studio ACTUALLY answers right now.
+ *
+ * `STUDIO_ORIGIN` above is the domain this product is *intended* to live on,
+ * derived from the slug so a rename still moves in one edit. But a link minted
+ * for a customer has to point at a host that resolves today — a claim link to
+ * an unregistered domain is a dead link, which is worse than an ugly one. So
+ * the origin used for MINTING links is overridable per deployment, while the
+ * intended domain stays the default and the single source of the name.
+ *
+ * Server-side only. Links are minted by the API, never in a browser, so this
+ * deliberately does not use a `NEXT_PUBLIC_` prefix — the value would then be
+ * inlined into every client bundle for no reason.
+ */
+export const STUDIO_ORIGIN_ENV = `${ENV_PREFIX}STUDIO_ORIGIN` as const
+
+function studioOrigin(): string {
+  // `typeof process` rather than a truthiness check: in a browser bundle the
+  // identifier is not merely falsy, it is undeclared, and referencing it throws.
+  if (typeof process === 'undefined') return STUDIO_ORIGIN
+  const configured = process.env[STUDIO_ORIGIN_ENV]
+  return configured !== undefined && configured.length > 0 ? configured : STUDIO_ORIGIN
+}
+
+export const claimUrl = (token: string): string => `${studioOrigin()}/claim/${token}`
 export const upgradeUrl = (projectId: string): string =>
-  `${STUDIO_ORIGIN}/upgrade/${projectId}`
+  `${studioOrigin()}/upgrade/${projectId}`
 
 /* ── files the CLI writes into the customer's project (§11) ───────────────── */
 
