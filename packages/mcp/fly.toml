@@ -1,0 +1,86 @@
+# The hosted MCP server.
+#
+# Deploy from the REPOSITORY ROOT, not from this directory:
+#
+#   pnpm --filter @winglet/mcp build
+#   fly deploy --config packages/mcp/fly.toml --dockerfile packages/mcp/Dockerfile \
+#     --ha=false --smoke-checks=false
+#
+# Each part earns its place:
+#   - repo root, because the Dockerfile does `COPY packages/mcp/dist`
+#   - build first, because it COPIES dist rather than building it, so a stale
+#     or missing dist ships silently
+#   - --ha=false, because one machine is a correctness requirement (see below)
+#   - --smoke-checks=false, per Fly's own Streaming-HTTP MCP guidance: the smoke
+#     check confuses a server that speaks JSON-RPC
+
+app = 'winglet-mcp'
+
+# `iad`, matching the REST API's Vercel region. Every MCP call is one round trip
+# to that API, so putting this anywhere else adds the distance between the two
+# to every single tool call.
+primary_region = 'iad'
+
+# Fly's own docs disagree about which signal it sends -- the config reference
+# says SIGINT, the long-running-tasks blueprint says SIGTERM. The process
+# handles both; this pins the one Fly actually sends so the 30s below applies.
+kill_signal = 'SIGTERM'
+kill_timeout = '30s'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  PORT = '8080'
+  # No credential of any kind here, deliberately. This container is shared
+  # across every tenant; the project write key arrives per request on the
+  # Authorization header and is never stored. Baking one in would make anyone
+  # who reaches the port an editor of that one project.
+  WINGLET_API_URL = 'https://winglet-api-rho.vercel.app/v1'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # ONE MACHINE, AND THAT IS A CORRECTNESS CONSTRAINT, NOT THRIFT.
+  #
+  # Fly's autostop maths differs by machine count. With one machine the proxy
+  # stops it only at a load of zero, so an in-flight request protects it. With
+  # two or more it computes `excess = machines - (over_soft_limit + 1)`, and a
+  # single request sits nowhere near the soft limit, so a machine can be stopped
+  # while it is still serving. Scale up only after confirming that changed.
+  #
+  # `stop`, not `suspend`: Fly documents that "Suspend is not durable... Fly
+  # does not guarantee that a suspended machine will resume." Node cold-boots in
+  # under a second here, so suspend buys nothing and risks a machine that never
+  # comes back.
+  #
+  # Scale-to-zero is safe because this server holds nothing open. Measured
+  # against the real binary: POST /mcp answers in ~50ms and closes, GET and
+  # DELETE return 405, no session id is issued. Protocol sessions and
+  # resumability were removed from the spec in revision 2026-07-28, so there is
+  # nothing to lose across a stop. If GET /mcp ever serves a real stream, this
+  # block is the first thing to revisit.
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = 'requests'
+    soft_limit = 25
+    hard_limit = 50
+
+  # No defaults are documented for these, so all three are set explicitly.
+  # `/healthz` is answered before any middleware and needs no credential —
+  # a check that returns 401 or 403 is a check that never passes.
+  [[http_service.checks]]
+    grace_period = '5s'
+    interval = '30s'
+    timeout = '5s'
+    method = 'GET'
+    path = '/healthz'
+    protocol = 'http'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'

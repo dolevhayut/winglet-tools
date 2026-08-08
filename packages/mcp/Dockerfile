@@ -17,7 +17,16 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY packages/mcp/package.json ./package.json
-RUN npm install --omit=dev --no-audit --no-fund
+
+# `--ignore-scripts` is required, not hygiene. `package.json` carries a
+# `prepare: tsup` script so that a pnpm workspace link builds the package on
+# install; npm runs `prepare` here too, but `--omit=dev` means tsup is absent
+# and the build dies with `sh: tsup: not found`. Nothing needs to run: `dist` is
+# built on the host and copied in below.
+#
+# It is also the right default for a container that takes customers' write keys
+# — no dependency gets to execute an install hook in this image.
+RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund
 
 COPY packages/mcp/dist ./dist
 
