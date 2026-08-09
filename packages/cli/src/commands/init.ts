@@ -2,6 +2,7 @@ import { CLI_BIN, ENV, SDK_PACKAGE, TYPES_FILE } from '@product'
 
 import { createAnonymousProject } from '../api'
 import type { AnonymousProject } from '../api'
+import { printBanner } from '../banner'
 import { CONTENT_TYPE_KEYS, CONTENT_TYPE_LIST } from '../../../sdk/src/definitions'
 import { detectNextApp } from '../detect'
 import type { NextApp } from '../detect'
@@ -151,6 +152,8 @@ function report(
   install: InstallResult,
   now: Date,
 ): void {
+  printBanner(io)
+
   const label = resolved.projectName ?? resolved.projectSlug ?? resolved.projectId
 
   io.write(

@@ -10,6 +10,8 @@ export interface Io {
   readonly writeError: (text: string) => void
   readonly cwd: string
   readonly env: Readonly<Record<string, string | undefined>>
+  /** True only for a real interactive terminal — false for a pipe, a file, or a test. */
+  readonly isTTY: boolean
 }
 
 export function processIo(): Io {
@@ -22,6 +24,7 @@ export function processIo(): Io {
     },
     cwd: process.cwd(),
     env: process.env,
+    isTTY: process.stdout.isTTY === true,
   }
 }
 
@@ -44,6 +47,7 @@ export function captureIo(options: {
     writeError: (text) => err.push(text),
     cwd: options.cwd,
     env: options.env ?? {},
+    isTTY: false,
     stdout: () => out.join(''),
     stderr: () => err.join(''),
   }
