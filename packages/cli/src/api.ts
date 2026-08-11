@@ -555,3 +555,208 @@ export async function deleteDocument(
     contentVersion: root === undefined ? undefined : optionalNumber(root, 'content_version'),
   }
 }
+
+/* ── the content model (M10) ──────────────────────────────────────────────── */
+
+/**
+ * `GET /v1/types`, `GET|POST|PATCH|DELETE /v1/objects` — the project's own
+ * content model, as opposed to its content.
+ *
+ * WHY THE CLI OWNS THIS AT ALL
+ * ----------------------------
+ * The agent is the primary worker and the command line is its whole world: it
+ * has no browser to open the studio in. A model that can only be inspected or
+ * changed through a UI is, for the agent, a model that cannot be changed. Every
+ * one of these has a `--json` path for exactly that reason.
+ *
+ * Reading takes the READ key, not the write key: the model is not a secret, and
+ * `types` must work in a build-only checkout that was linked with `--read-key`
+ * alone.
+ */
+
+export interface ModelFieldDefinition {
+  readonly name: string
+  readonly kind: string
+  readonly required: boolean
+  readonly repeated?: boolean | undefined
+  readonly options?: readonly string[] | undefined
+  readonly to?: readonly string[] | undefined
+  readonly blocks?: readonly string[] | undefined
+  readonly of?: string | undefined
+}
+
+export interface ModelObjectDefinition {
+  readonly key: string
+  readonly title: string
+  readonly fields: readonly ModelFieldDefinition[]
+}
+
+export interface ModelContentTypeDefinition extends ModelObjectDefinition {
+  readonly titleField: string
+  readonly slugField: string
+}
+
+export interface ProjectModel {
+  readonly types: readonly ModelContentTypeDefinition[]
+  readonly objects: readonly ModelObjectDefinition[]
+}
+
+export interface ModelClientOptions {
+  readonly baseUrl: string
+  readonly key: string
+  readonly fetchImpl?: typeof fetch | undefined
+}
+
+function parseFields(value: unknown, context: string): ModelFieldDefinition[] {
+  if (!Array.isArray(value)) {
+    throw new CliError(`The API returned an unexpected ${context}.`, EXIT.error)
+  }
+  return value.flatMap((entry) => {
+    const record = asRecord(entry)
+    if (record === undefined) return []
+    const name = record['name']
+    const kind = record['kind']
+    if (typeof name !== 'string' || typeof kind !== 'string') return []
+    return [
+      {
+        name,
+        kind,
+        required: record['required'] === true,
+        ...(typeof record['repeated'] === 'boolean' ? { repeated: record['repeated'] } : {}),
+        ...(Array.isArray(record['options'])
+          ? { options: record['options'].filter((o): o is string => typeof o === 'string') }
+          : {}),
+        ...(Array.isArray(record['to'])
+          ? { to: record['to'].filter((o): o is string => typeof o === 'string') }
+          : {}),
+        ...(Array.isArray(record['blocks'])
+          ? { blocks: record['blocks'].filter((o): o is string => typeof o === 'string') }
+          : {}),
+        ...(typeof record['of'] === 'string' ? { of: record['of'] } : {}),
+      },
+    ]
+  })
+}
+
+function parseObjectDefinition(entry: unknown): ModelObjectDefinition | undefined {
+  const record = asRecord(entry)
+  if (record === undefined) return undefined
+  const key = record['key']
+  if (typeof key !== 'string') return undefined
+  const title = record['title']
+  return {
+    key,
+    title: typeof title === 'string' ? title : key,
+    fields: parseFields(record['fields'], `definition of "${key}"`),
+  }
+}
+
+function parseContentTypeDefinition(entry: unknown): ModelContentTypeDefinition | undefined {
+  const base = parseObjectDefinition(entry)
+  if (base === undefined) return undefined
+  const record = asRecord(entry) ?? {}
+  const titleField = record['titleField']
+  const slugField = record['slugField']
+  return {
+    ...base,
+    titleField: typeof titleField === 'string' ? titleField : 'title',
+    slugField: typeof slugField === 'string' ? slugField : 'slug',
+  }
+}
+
+export async function fetchProjectModel(options: ModelClientOptions): Promise<ProjectModel> {
+  const url = `${options.baseUrl}/types`
+  const body = await json(url, { key: options.key, ...withFetch(options.fetchImpl) })
+  const root = asRecord(body)
+  if (root === undefined) {
+    throw new CliError('The API returned an unexpected content model.', EXIT.error)
+  }
+  const types = Array.isArray(root['types']) ? root['types'] : []
+  const objects = Array.isArray(root['objects']) ? root['objects'] : []
+  return {
+    types: types.flatMap((entry) => {
+      const parsed = parseContentTypeDefinition(entry)
+      return parsed === undefined ? [] : [parsed]
+    }),
+    objects: objects.flatMap((entry) => {
+      const parsed = parseObjectDefinition(entry)
+      return parsed === undefined ? [] : [parsed]
+    }),
+  }
+}
+
+export async function listProjectObjects(
+  options: ModelClientOptions,
+): Promise<readonly ModelObjectDefinition[]> {
+  const url = `${options.baseUrl}/objects`
+  const body = await json(url, { key: options.key, ...withFetch(options.fetchImpl) })
+  const root = asRecord(body)
+  const objects = root === undefined ? undefined : root['objects']
+  if (!Array.isArray(objects)) {
+    throw new CliError('The API returned an unexpected object list.', EXIT.error)
+  }
+  return objects.flatMap((entry) => {
+    const parsed = parseObjectDefinition(entry)
+    return parsed === undefined ? [] : [parsed]
+  })
+}
+
+function requireObject(body: unknown, what: string): ModelObjectDefinition {
+  const root = asRecord(body)
+  const parsed = root === undefined ? undefined : parseObjectDefinition(root['object'])
+  if (parsed === undefined) {
+    throw new CliError(`The API returned an unexpected ${what}.`, EXIT.error)
+  }
+  return parsed
+}
+
+export async function createProjectObject(
+  options: ModelClientOptions,
+  input: ModelObjectDefinition,
+): Promise<ModelObjectDefinition> {
+  const url = `${options.baseUrl}/objects`
+  const body = await json(url, {
+    method: 'POST',
+    key: options.key,
+    body: { key: input.key, title: input.title, fields: input.fields },
+    ...withFetch(options.fetchImpl),
+  })
+  return requireObject(body, 'object definition')
+}
+
+export interface ObjectPatchInput {
+  readonly title?: string | undefined
+  readonly fields?: readonly ModelFieldDefinition[] | undefined
+}
+
+export async function updateProjectObject(
+  options: ModelClientOptions,
+  key: string,
+  patch: ObjectPatchInput,
+): Promise<ModelObjectDefinition> {
+  const url = `${options.baseUrl}/objects/${encodeURIComponent(key)}`
+  const body = await json(url, {
+    method: 'PATCH',
+    key: options.key,
+    body: {
+      ...(patch.title === undefined ? {} : { title: patch.title }),
+      ...(patch.fields === undefined ? {} : { fields: patch.fields }),
+    },
+    ...withFetch(options.fetchImpl),
+  })
+  return requireObject(body, 'object definition')
+}
+
+export async function deleteProjectObject(
+  options: ModelClientOptions,
+  key: string,
+): Promise<boolean> {
+  const url = `${options.baseUrl}/objects/${encodeURIComponent(key)}`
+  const raw = await send(url, {
+    method: 'DELETE',
+    key: options.key,
+    ...withFetch(options.fetchImpl),
+  })
+  if (raw.status < 200 || raw.status >= 300) throw apiFailure(url, raw)
+  return asRecord(raw.body)?.['deleted'] === true
+}

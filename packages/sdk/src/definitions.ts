@@ -7,9 +7,14 @@ import type { BlockKind, ContentTypeKey } from './types'
  * --------------------------------------
  * The API seeds these exact definitions from `apps/api/lib/seed.ts`. This
  * package is published to npm and cannot import from the API application, so
- * the definitions are restated here. `tests/definitions.test.ts` imports the
- * API's copy and asserts the two are deep-equal, so a drift fails the build
- * rather than silently generating types the server does not honour.
+ * the definitions are restated here.
+ *
+ * THE DRIFT GUARD LIVES IN THE PRIVATE REPO, NOT HERE. These two files are in
+ * different repositories, and only the private one can see both: it fetches
+ * this file and compares. See `tools/guards/definitions-sync.test.ts` there.
+ * An earlier version of this comment named a `tests/definitions.test.ts` in
+ * this package that never existed, which is exactly the kind of claim a guard
+ * is supposed to make impossible.
  *
  * The block field definitions live ONLY here: `seed.ts` names the three block
  * kinds but never describes their fields, and the generator needs them.
@@ -29,6 +34,11 @@ export function isContentTypeKey(value: string): value is ContentTypeKey {
   return (CONTENT_TYPE_KEYS as readonly string[]).includes(value)
 }
 
+/**
+ * `object` (M10 / PRD-v2 §3.2) is the only kind whose shape is not fixed here:
+ * it names an entry in the project's own object registry through
+ * `FieldDefinition.of`. With `repeated` it becomes `array<object>`.
+ */
 export const FIELD_KINDS = [
   'string',
   'text',
@@ -45,23 +55,51 @@ export const FIELD_KINDS = [
   'blocks',
   'stringList',
   'custom',
+  'object',
 ] as const
 
 export type FieldKind = (typeof FIELD_KINDS)[number]
 
+/**
+ * The optional members are spelled `?: T | undefined` rather than `?: T`,
+ * for the same reason the generated interfaces are — see the note on
+ * `fieldLine` in `typegen.ts`. Under `exactOptionalPropertyTypes` the short
+ * form forbids an explicit `undefined`, and these values now arrive from a zod
+ * parse of a `jsonb` column, whose inferred output is the long form.
+ */
 export interface FieldDefinition {
   readonly name: string
   readonly kind: FieldKind
   readonly required: boolean
-  /** Array-valued field (`tags`, `items`, `images`, `sections`). */
-  readonly repeated?: boolean
+  /** Array-valued field (`tags`, `items`, `images`, `sections`, `gallery`). */
+  readonly repeated?: boolean | undefined
   /** `select` only — the closed set of allowed values. */
-  readonly options?: readonly string[]
+  readonly options?: readonly string[] | undefined
   /** `reference` only — which content types may be pointed at. */
-  readonly to?: readonly ContentTypeKey[]
+  readonly to?: readonly ContentTypeKey[] | undefined
   /** `blocks` only — which `_type`s are allowed in the array. */
-  readonly blocks?: readonly BlockKind[]
+  readonly blocks?: readonly BlockKind[] | undefined
+  /** `object` only — the key of the registered object this field carries. */
+  readonly of?: string | undefined
 }
+
+/**
+ * A reusable field shape, registered once per project and referenced by key.
+ *
+ * Flat by rule: an object's own fields may not be of kind `object`. The key is
+ * a plain `string`, not a union — the registry is customer data, and a closed
+ * list of object keys would be the very defect M10 exists to remove.
+ */
+export interface ObjectDefinition {
+  readonly key: string
+  readonly title: string
+  readonly fields: readonly FieldDefinition[]
+}
+
+/** Kinds an object's own field may take — everything except `object` itself. */
+export const OBJECT_FIELD_KINDS = FIELD_KINDS.filter(
+  (kind): kind is Exclude<FieldKind, 'object'> => kind !== 'object',
+)
 
 export interface ContentTypeDefinition {
   readonly key: ContentTypeKey
@@ -85,6 +123,43 @@ const SLUG_FIELD: FieldDefinition = { name: 'slug', kind: 'string', required: tr
 const SEO_FIELD: FieldDefinition = { name: 'seo', kind: 'seo', required: false }
 const CUSTOM_FIELD: FieldDefinition = { name: 'custom', kind: 'custom', required: false }
 
+/* ── the seeded object registry (M10) ─────────────────────────────────────── */
+
+/**
+ * Two objects, seeded into every project. Not privileged: once content types
+ * become definable they are indistinguishable from anything an agent registers
+ * with the CLI's `objects add`. They exist because a field kind with nothing to
+ * point at cannot be demonstrated, and because these two shapes are the
+ * most-repeated ones PRD-v2 measured on a real production site.
+ *
+ * `required` means the key must be PRESENT, not non-empty — the same meaning it
+ * carries on `title`.
+ */
+const FAQ_OBJECT: ObjectDefinition = {
+  key: 'faq',
+  title: 'Question and answer',
+  fields: [
+    { name: 'question', kind: 'string', required: true },
+    { name: 'answer', kind: 'text', required: true },
+  ],
+}
+
+const GALLERY_IMAGE_OBJECT: ObjectDefinition = {
+  key: 'galleryImage',
+  title: 'Gallery image',
+  fields: [
+    { name: 'image', kind: 'image', required: true },
+    { name: 'alt', kind: 'string', required: true },
+    { name: 'caption', kind: 'text', required: false },
+  ],
+}
+
+export const OBJECT_LIST: readonly ObjectDefinition[] = [FAQ_OBJECT, GALLERY_IMAGE_OBJECT]
+
+export const OBJECTS: Readonly<Record<string, ObjectDefinition>> = Object.fromEntries(
+  OBJECT_LIST.map((definition) => [definition.key, definition]),
+)
+
 const PAGE: ContentTypeDefinition = {
   key: 'page',
   title: 'Page',
@@ -94,6 +169,11 @@ const PAGE: ContentTypeDefinition = {
     TITLE_FIELD,
     SLUG_FIELD,
     { name: 'sections', kind: 'blocks', required: false, repeated: true, blocks: BLOCK_KINDS },
+    // The first two `array<object>` fields in the product. Optional, so every
+    // document written before M10 is still valid and every consumer that never
+    // reads them still compiles.
+    { name: 'faq', kind: 'object', required: false, repeated: true, of: 'faq' },
+    { name: 'gallery', kind: 'object', required: false, repeated: true, of: 'galleryImage' },
     SEO_FIELD,
     CUSTOM_FIELD,
   ],

@@ -1,10 +1,17 @@
 import { TYPES_FILE } from '@product'
 import { describe, expect, it } from 'vitest'
 
-import { BLOCK_LIST, CONTENT_TYPE_LIST } from '../src/definitions'
+import { BLOCK_LIST, CONTENT_TYPE_LIST, OBJECT_LIST } from '../src/definitions'
 import type { BlockDefinition, ContentTypeDefinition } from '../src/definitions'
 import { FIELD_SCHEMAS } from '../src/schemas'
-import { DEFAULT_TYPEGEN_INPUT, blockNameFor, fieldType, generateTypes, typeNameFor } from '../src/typegen'
+import {
+  DEFAULT_TYPEGEN_INPUT,
+  blockNameFor,
+  fieldType,
+  generateTypes,
+  objectNameFor,
+  typeNameFor,
+} from '../src/typegen'
 
 /**
  * PRD §11 — `types` regenerates the customer's types file from the schema
@@ -94,7 +101,17 @@ describe('blocks', () => {
   })
 
   it('does not emit the five Phase 2 block types', () => {
-    for (const absent of ['imageText', 'faq', 'testimonials', 'contactForm', 'GalleryBlock']) {
+    // Named as BLOCK interfaces, not as bare words. `faq` is one of §8's eight
+    // block types AND — since M10 — a registered object, so asserting the
+    // substring `faq` is absent would now fail on `FaqObject`, which is a
+    // different feature that is supposed to be there.
+    for (const absent of [
+      'ImageTextBlock',
+      'FaqBlock',
+      'TestimonialsBlock',
+      'ContactFormBlock',
+      'GalleryBlock',
+    ]) {
       expect(output).not.toContain(absent)
     }
   })
@@ -116,6 +133,9 @@ describe('content types', () => {
       'readonly title: string',
       'readonly slug: string',
       'readonly sections?: readonly (HeroBlock | RichtextBlock | CtaBlock)[] | undefined',
+      // M10 — `array<object>` resolves to the registered object's interface.
+      'readonly faq?: readonly FaqObject[] | undefined',
+      'readonly gallery?: readonly GalleryImageObject[] | undefined',
       'readonly seo?: SeoFields | undefined',
       'readonly custom?: CustomFields | undefined',
     ])
@@ -199,5 +219,97 @@ describe('the default input', () => {
   it('is §8 and the three Phase 1 blocks', () => {
     expect(DEFAULT_TYPEGEN_INPUT.contentTypes).toEqual(CONTENT_TYPE_LIST)
     expect(DEFAULT_TYPEGEN_INPUT.blocks).toEqual(BLOCK_LIST)
+  })
+})
+
+/* ── objects (M10) ────────────────────────────────────────────────────────── */
+
+describe('registered objects', () => {
+  it('emits one interface per object, extending the item-key carrier', () => {
+    for (const object of OBJECT_LIST) {
+      expect(output).toContain(
+        `export interface ${objectNameFor(object.key)} extends ObjectItemMeta {`,
+      )
+    }
+  })
+
+  it('emits `_key` as OPTIONAL', () => {
+    // The server always stamps one, but a document written before M10 — or
+    // restored from a snapshot that predates it — has items without one.
+    // Requiring it would make the customer's own content fail to type-check
+    // against their own generated types.
+    expect(fieldLines(output, 'ObjectItemMeta')).toEqual(['readonly _key?: string | undefined'])
+  })
+
+  it('carries required-ness and kind through to the object interface', () => {
+    expect(fieldLines(output, objectNameFor('galleryImage'))).toEqual([
+      'readonly image: ImageRef',
+      'readonly alt: string',
+      'readonly caption?: string | undefined',
+    ])
+  })
+
+  it('suffixes the name, so an object and a content type may share a key', () => {
+    // Separate namespaces on the server; without the suffix a project holding
+    // both would generate the same interface twice and fail to compile.
+    expect(objectNameFor('page')).toBe('PageObject')
+    expect(objectNameFor('page')).not.toBe(typeNameFor('page'))
+  })
+
+  it('resolves a repeated object field to a readonly array of the interface', () => {
+    expect(
+      fieldType(
+        { name: 'gallery', kind: 'object', required: false, repeated: true, of: 'galleryImage' },
+        new Set(['galleryImage']),
+      ),
+    ).toBe('readonly GalleryImageObject[]')
+  })
+
+  it('resolves a single object field to the bare interface', () => {
+    expect(
+      fieldType({ name: 'hero', kind: 'object', required: true, of: 'galleryImage' }, new Set(['galleryImage'])),
+    ).toBe('GalleryImageObject')
+  })
+
+  it('degrades an UNKNOWN object to an open record rather than a dangling name', () => {
+    // A types file that references an interface which was never emitted does
+    // not compile in the customer's project. An unreadable-but-present value is
+    // the honest answer while a registry fetch is stale.
+    expect(fieldType({ name: 'rooms', kind: 'object', required: false, of: 'roomCard' }, new Set()))
+      .toBe('Readonly<Record<string, unknown>>')
+  })
+
+  it('degrades a field whose `of` was never set', () => {
+    expect(fieldType({ name: 'broken', kind: 'object', required: false }, new Set(['faq']))).toBe(
+      'Readonly<Record<string, unknown>>',
+    )
+  })
+
+  it('emits no object section at all when the project defines none', () => {
+    const bare = generateTypes({ contentTypes: CONTENT_TYPE_LIST, blocks: BLOCK_LIST, objects: [] })
+    expect(bare).not.toContain('ObjectItemMeta')
+    // The page fields still generate — they just lose their resolved shape.
+    expect(bare).toContain('readonly faq?: readonly Readonly<Record<string, unknown>>[] | undefined')
+  })
+
+  it('generates a project-specific registry, not the built-in one', () => {
+    // The whole point of M10 reaching typegen: two projects on the same CLI
+    // version produce different files.
+    const custom = generateTypes({
+      contentTypes: CONTENT_TYPE_LIST,
+      blocks: BLOCK_LIST,
+      objects: [
+        {
+          key: 'priceRow',
+          title: 'Price row',
+          fields: [
+            { name: 'label', kind: 'string', required: true },
+            { name: 'price', kind: 'number', required: true },
+          ],
+        },
+      ],
+    })
+    expect(custom).toContain('export interface PriceRowObject extends ObjectItemMeta {')
+    expect(custom).not.toContain('FaqObject')
   })
 })

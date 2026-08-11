@@ -19,6 +19,18 @@ import { linkCommand } from './commands/link'
 import type { LinkOptions } from './commands/link'
 import { listCommand } from './commands/list'
 import type { ListOptions } from './commands/list'
+import {
+  objectsAddCommand,
+  objectsListCommand,
+  objectsRmCommand,
+  objectsSetCommand,
+} from './commands/objects'
+import type {
+  ObjectsAddOptions,
+  ObjectsListOptions,
+  ObjectsRmOptions,
+  ObjectsSetOptions,
+} from './commands/objects'
 import { publishCommand } from './commands/publish'
 import type { PublishOptions } from './commands/publish'
 import { pullCommand } from './commands/pull'
@@ -107,6 +119,11 @@ export function buildProgram(io: Io): Command {
       `  npx ${CLI_BIN} types           refresh ${TYPES_FILE} after a CLI upgrade`,
       `  npx ${CLI_BIN} claim           reprint the owner adoption link`,
       '',
+      'Shaping the content model:',
+      `  ${CLI_BIN} objects list             the reusable field shapes this project defines`,
+      `  ${CLI_BIN} objects add <key>        register one, e.g. --field question:string!`,
+      `  ${CLI_BIN} objects set <key>        extend one — additive only`,
+      '',
       'Editing content:',
       `  ${CLI_BIN} list                    every document, id/type/slug/status`,
       `  ${CLI_BIN} get <id>                one document in full`,
@@ -138,11 +155,78 @@ export function buildProgram(io: Io): Command {
 
   program
     .command('types')
-    .description(`regenerate ${TYPES_FILE}`)
+    .description(`regenerate ${TYPES_FILE} from this project’s content model`)
     .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--local', 'generate from the built-in schema without contacting the API')
     .option('--json', JSON_HELP)
-    .action((options: TypesOptions) => {
-      typesCommand(io, options)
+    .action(async (options: TypesOptions) => {
+      await typesCommand(io, options)
+    })
+
+  /**
+   * `objects` — the content model, from the command line.
+   *
+   * A subcommand group rather than five top-level verbs: `objects` is a noun the
+   * agent is operating ON, and keeping the verbs under it leaves room for
+   * `types` to grow the same shape when content types become definable.
+   */
+  const objects = program
+    .command('objects')
+    .description('reusable field shapes this project defines (`object` fields point at these)')
+
+  objects
+    .command('list')
+    .description('every object this project defines (always JSON)')
+    .option('--types', 'include the content types too')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .action(async (options: ObjectsListOptions) => {
+      await objectsListCommand(io, options)
+    })
+
+  objects
+    .command('add')
+    .argument('<key>', 'the object name, e.g. galleryImage')
+    .description('register a reusable field shape')
+    .option('--title <title>', 'human label for the studio (default: the key)')
+    .option(
+      '--field <spec...>',
+      'repeatable; name:kind, with [] for a list, ! for required, =a|b for select options',
+      collectSet,
+      [],
+    )
+    .option('--fields <json>', 'the full field list as a JSON array, or @path to a file')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (key: string, options: ObjectsAddOptions) => {
+      await objectsAddCommand(io, key, options)
+    })
+
+  objects
+    .command('set')
+    .argument('<key>', 'the object to change')
+    .description('extend an object — additive only: nothing may be removed or retyped')
+    .option('--rename <title>', 'change the human label')
+    .option('--field <spec...>', 'repeatable; the FULL field list, existing fields included', collectSet, [])
+    .option('--fields <json>', 'the full field list as a JSON array, or @path to a file')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (key: string, options: ObjectsSetOptions) => {
+      await objectsSetCommand(io, key, options)
+    })
+
+  objects
+    .command('rm')
+    .argument('<key>', 'the object to remove')
+    .description('remove an object — refused while any content type still uses it')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (key: string, options: ObjectsRmOptions) => {
+      await objectsRmCommand(io, key, options)
     })
 
   program

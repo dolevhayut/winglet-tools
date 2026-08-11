@@ -3,7 +3,7 @@ import { CLI_BIN, ENV, SDK_PACKAGE, TYPES_FILE } from '@product'
 import { createAnonymousProject } from '../api'
 import type { AnonymousProject } from '../api'
 import { printBanner } from '../banner'
-import { CONTENT_TYPE_KEYS, CONTENT_TYPE_LIST } from '../../../sdk/src/definitions'
+import { CONTENT_TYPE_KEYS, CONTENT_TYPE_LIST, OBJECT_LIST } from '../../../sdk/src/definitions'
 import { detectNextApp } from '../detect'
 import type { NextApp } from '../detect'
 import { ENV_FILE } from '../env-file'
@@ -294,6 +294,7 @@ export async function initCommand(io: Io, options: InitOptions): Promise<void> {
       },
       apiBaseUrl: partial.apiBaseUrl,
       contentTypes: CONTENT_TYPE_LIST.map((definition) => definition.key),
+      objects: OBJECT_LIST.map((definition) => definition.key),
       files: {
         env: { path: result.env.path, outcome: result.env.outcome, keys: result.envChanged },
         types: result.types === undefined ? null : { path: result.types.path, outcome: result.types.outcome },

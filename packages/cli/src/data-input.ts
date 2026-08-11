@@ -19,11 +19,25 @@ export function readJsonObject(
   raw: string,
   flag: string,
 ): Readonly<Record<string, unknown>> {
+  const parsed = readJsonValue(root, raw, flag)
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new CliError(`${flag} must be a JSON object.`, EXIT.error)
+  }
+  return parsed as Readonly<Record<string, unknown>>
+}
+
+/**
+ * The same literal-or-`@path` handling, without insisting the result is an
+ * object. `objects add --fields` takes an ARRAY of field definitions, and
+ * loosening `readJsonObject` for it would weaken the guarantee every other
+ * command relies on.
+ */
+export function readJsonValue(root: string, raw: string, flag: string): unknown {
   const text = raw.startsWith('@') ? readFileFor(root, raw.slice(1), flag) : raw
 
-  let parsed: unknown
   try {
-    parsed = JSON.parse(text)
+    return JSON.parse(text)
   } catch (cause) {
     throw new CliError(
       `${flag} is not valid JSON.`,
@@ -31,11 +45,6 @@ export function readJsonObject(
       cause instanceof Error ? cause.message : String(cause),
     )
   }
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new CliError(`${flag} must be a JSON object.`, EXIT.error)
-  }
-  return parsed as Readonly<Record<string, unknown>>
 }
 
 function readFileFor(root: string, path: string, flag: string): string {

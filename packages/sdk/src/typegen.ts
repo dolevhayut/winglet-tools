@@ -1,7 +1,13 @@
 import { SDK_PACKAGE, TYPES_FILE } from '@product'
 
-import type { BlockDefinition, ContentTypeDefinition, FieldDefinition, FieldKind } from './definitions'
-import { BLOCK_LIST, CONTENT_TYPE_LIST } from './definitions'
+import type {
+  BlockDefinition,
+  ContentTypeDefinition,
+  FieldDefinition,
+  FieldKind,
+  ObjectDefinition,
+} from './definitions'
+import { BLOCK_LIST, CONTENT_TYPE_LIST, OBJECT_LIST } from './definitions'
 
 /**
  * PRD §10/§11 — the generator behind the types file `init` writes and
@@ -16,12 +22,20 @@ import { BLOCK_LIST, CONTENT_TYPE_LIST } from './definitions'
 export interface TypegenInput {
   readonly contentTypes: readonly ContentTypeDefinition[]
   readonly blocks: readonly BlockDefinition[]
+  /**
+   * The project's object registry (M10). Optional so that a caller written
+   * before M10 — or a fixture that has no objects — still compiles; an `object`
+   * field whose key is not in here degrades to `Record<string, unknown>` rather
+   * than emitting a reference to an interface that was never written.
+   */
+  readonly objects?: readonly ObjectDefinition[] | undefined
 }
 
 /** What `init` generates when nothing is customised: §8, exactly. */
 export const DEFAULT_TYPEGEN_INPUT: TypegenInput = {
   contentTypes: CONTENT_TYPE_LIST,
   blocks: BLOCK_LIST,
+  objects: OBJECT_LIST,
 }
 
 /* ── naming ───────────────────────────────────────────────────────────────── */
@@ -44,9 +58,22 @@ export function blockNameFor(kind: string): string {
   return `${pascal(kind)}Block`
 }
 
+/**
+ * `galleryImage` → `GalleryImageObject`.
+ *
+ * The suffix is not decoration. Content type keys and object keys are separate
+ * namespaces on the server, so a project may hold both a `galleryImage` type
+ * and a `galleryImage` object; without it the generated file would declare the
+ * same interface twice and fail to compile for a reason the customer never
+ * caused. `blockNameFor` carries a suffix for exactly the same reason.
+ */
+export function objectNameFor(key: string): string {
+  return `${pascal(key)}Object`
+}
+
 /* ── field kind → TypeScript ──────────────────────────────────────────────── */
 
-const SCALARS: Readonly<Record<Exclude<FieldKind, 'select' | 'blocks'>, string>> = {
+const SCALARS: Readonly<Record<Exclude<FieldKind, 'select' | 'blocks' | 'object'>, string>> = {
   string: 'string',
   text: 'string',
   richtext: 'RichText',
@@ -69,7 +96,7 @@ function quote(value: string): string {
 }
 
 /** The element type, before `repeated` wraps it in an array. */
-function elementType(field: FieldDefinition): string {
+function elementType(field: FieldDefinition, knownObjects: ReadonlySet<string>): string {
   if (field.kind === 'select') {
     const options = field.options ?? []
     return options.length === 0 ? 'string' : options.map(quote).join(' | ')
@@ -78,11 +105,24 @@ function elementType(field: FieldDefinition): string {
     const kinds = field.blocks ?? []
     return kinds.length === 0 ? 'never' : kinds.map(blockNameFor).join(' | ')
   }
+  if (field.kind === 'object') {
+    const key = field.of
+    // A field pointing at an object this generation run has never seen degrades
+    // to the open record rather than referencing an interface that was never
+    // emitted. `never` would be more "correct" and would make the field
+    // unusable; an unreadable-but-present value is the honest answer, and it
+    // keeps a types file generatable while a registry fetch is stale.
+    if (key === undefined || !knownObjects.has(key)) return 'Readonly<Record<string, unknown>>'
+    return objectNameFor(key)
+  }
   return SCALARS[field.kind]
 }
 
-export function fieldType(field: FieldDefinition): string {
-  const element = elementType(field)
+export function fieldType(
+  field: FieldDefinition,
+  knownObjects: ReadonlySet<string> = new Set(),
+): string {
+  const element = elementType(field, knownObjects)
   if (field.repeated !== true) return element
   // A union element has to be parenthesised before `[]` binds to it.
   return element.includes(' | ') ? `readonly (${element})[]` : `readonly ${element}[]`
@@ -100,9 +140,10 @@ export function fieldType(field: FieldDefinition): string {
  * With the flag off (the default) the two forms are identical, so this costs
  * nothing and buys interoperability under every tsconfig.
  */
-function fieldLine(field: FieldDefinition): string {
-  if (field.required) return `  readonly ${field.name}: ${fieldType(field)}`
-  return `  readonly ${field.name}?: ${fieldType(field)} | undefined`
+function fieldLine(field: FieldDefinition, knownObjects: ReadonlySet<string>): string {
+  const type = fieldType(field, knownObjects)
+  if (field.required) return `  readonly ${field.name}: ${type}`
+  return `  readonly ${field.name}?: ${type} | undefined`
 }
 
 function interfaceBlock(name: string, extendsClause: string, fields: readonly string[]): string {
@@ -191,13 +232,49 @@ function primitives(contentTypeKeys: readonly string[]): string {
 
 /* ── the generator ────────────────────────────────────────────────────────── */
 
-function blockSection(blocks: readonly BlockDefinition[]): string {
+/**
+ * One interface per registered object, plus the `_key` every array element
+ * carries.
+ *
+ * `_key` is OPTIONAL in the generated type even though the server always stamps
+ * it, because a document written before M10 — or restored from a snapshot that
+ * predates it — has items without one. A required `_key` would make the
+ * customer's own content fail to type-check against their own generated types.
+ */
+function objectSection(objects: readonly ObjectDefinition[], known: ReadonlySet<string>): string {
+  if (objects.length === 0) return ''
+
+  const parts: string[] = [
+    '/* objects — reusable field shapes, registered per project */',
+    '',
+    '/** Stable identity for one element of an `array<object>`, minted by the server. */',
+    'export interface ObjectItemMeta {',
+    '  readonly _key?: string | undefined',
+    '}',
+    '',
+  ]
+
+  for (const object of objects) {
+    parts.push(
+      interfaceBlock(
+        objectNameFor(object.key),
+        'ObjectItemMeta',
+        object.fields.map((field) => fieldLine(field, known)),
+      ),
+      '',
+    )
+  }
+
+  return parts.join('\n')
+}
+
+function blockSection(blocks: readonly BlockDefinition[], known: ReadonlySet<string>): string {
   const parts: string[] = ['/* blocks — the sections a page is composed of */', '']
 
   for (const block of blocks) {
     const fields = [
       `  readonly _type: ${quote(block.kind)}`,
-      ...block.fields.map(fieldLine),
+      ...block.fields.map((field) => fieldLine(field, known)),
     ]
     parts.push(interfaceBlock(blockNameFor(block.kind), '', fields), '')
   }
@@ -209,13 +286,20 @@ function blockSection(blocks: readonly BlockDefinition[]): string {
   return parts.join('\n')
 }
 
-function contentTypeSection(definitions: readonly ContentTypeDefinition[]): string {
+function contentTypeSection(
+  definitions: readonly ContentTypeDefinition[],
+  known: ReadonlySet<string>,
+): string {
   const parts: string[] = ['/* content types */', '']
 
   for (const definition of definitions) {
     const name = typeNameFor(definition.key)
     parts.push(
-      interfaceBlock(`${name}Fields`, '', definition.fields.map(fieldLine)),
+      interfaceBlock(
+        `${name}Fields`,
+        '',
+        definition.fields.map((field) => fieldLine(field, known)),
+      ),
       '',
       interfaceBlock(name, `${name}Fields, DocumentMeta<${quote(definition.key)}>`, []),
       '',
@@ -244,12 +328,15 @@ function contentTypeSection(definitions: readonly ContentTypeDefinition[]): stri
  */
 export function generateTypes(input: TypegenInput = DEFAULT_TYPEGEN_INPUT): string {
   const keys = input.contentTypes.map((definition) => definition.key)
+  const objects = input.objects ?? []
+  const known = new Set(objects.map((object) => object.key))
 
   return [
     header(),
     primitives(keys),
-    blockSection(input.blocks),
-    contentTypeSection(input.contentTypes),
+    objectSection(objects, known),
+    blockSection(input.blocks, known),
+    contentTypeSection(input.contentTypes, known),
   ]
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')

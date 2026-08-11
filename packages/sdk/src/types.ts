@@ -116,12 +116,47 @@ export interface CtaBlock {
 /** Discriminated on `_type`, closed on purpose (see `definitions.ts`). */
 export type Block = HeroBlock | RichtextBlock | CtaBlock
 
+/* ── registered objects (M10) ─────────────────────────────────────────────── */
+
+/**
+ * WHY THE GENERATED NAME CARRIES AN `Object` SUFFIX
+ * ------------------------------------------------
+ * Content type keys and object keys are separate namespaces on the server, so a
+ * project may legitimately hold a content type and an object with the same key.
+ * Without a suffix the generator would emit two interfaces called
+ * `GalleryImage` and the customer's types file would not compile — a failure
+ * caused by a naming choice they never made. The suffix mirrors `HeroBlock`,
+ * which exists for exactly the same reason.
+ */
+
+/**
+ * Every element of an `array<object>` carries a `_key` the server minted: a
+ * stable identity that survives reordering, so "remove this one" is precise
+ * rather than positional.
+ */
+export interface ObjectItemMeta {
+  readonly _key?: string | undefined
+}
+
+export interface FaqObject extends ObjectItemMeta {
+  readonly question: string
+  readonly answer: string
+}
+
+export interface GalleryImageObject extends ObjectItemMeta {
+  readonly image: ImageRef
+  readonly alt: string
+  readonly caption?: string | undefined
+}
+
 /* ── the four content types (§8) ──────────────────────────────────────────── */
 
 export interface PageFields {
   readonly title: string
   readonly slug: string
   readonly sections?: readonly Block[] | undefined
+  readonly faq?: readonly FaqObject[] | undefined
+  readonly gallery?: readonly GalleryImageObject[] | undefined
   readonly seo?: SeoFields | undefined
   readonly custom?: CustomFields | undefined
 }

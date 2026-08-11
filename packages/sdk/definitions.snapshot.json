@@ -1,0 +1,276 @@
+{
+  "fieldKinds": [
+    "string",
+    "text",
+    "richtext",
+    "number",
+    "boolean",
+    "date",
+    "image",
+    "gallery",
+    "reference",
+    "select",
+    "url",
+    "seo",
+    "blocks",
+    "stringList",
+    "custom",
+    "object"
+  ],
+  "contentTypeKeys": [
+    "page",
+    "post",
+    "product",
+    "collection"
+  ],
+  "blockKinds": [
+    "hero",
+    "richtext",
+    "cta"
+  ],
+  "contentTypes": [
+    {
+      "key": "page",
+      "title": "Page",
+      "titleField": "title",
+      "slugField": "slug",
+      "fields": [
+        {
+          "name": "title",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "slug",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "sections",
+          "kind": "blocks",
+          "required": false,
+          "repeated": true,
+          "blocks": [
+            "hero",
+            "richtext",
+            "cta"
+          ]
+        },
+        {
+          "name": "faq",
+          "kind": "object",
+          "required": false,
+          "repeated": true,
+          "of": "faq"
+        },
+        {
+          "name": "gallery",
+          "kind": "object",
+          "required": false,
+          "repeated": true,
+          "of": "galleryImage"
+        },
+        {
+          "name": "seo",
+          "kind": "seo",
+          "required": false
+        },
+        {
+          "name": "custom",
+          "kind": "custom",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "post",
+      "title": "Post",
+      "titleField": "title",
+      "slugField": "slug",
+      "fields": [
+        {
+          "name": "title",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "slug",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "excerpt",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "body",
+          "kind": "richtext",
+          "required": false
+        },
+        {
+          "name": "cover",
+          "kind": "image",
+          "required": false
+        },
+        {
+          "name": "publishedAt",
+          "kind": "date",
+          "required": false
+        },
+        {
+          "name": "tags",
+          "kind": "stringList",
+          "required": false,
+          "repeated": true
+        },
+        {
+          "name": "seo",
+          "kind": "seo",
+          "required": false
+        },
+        {
+          "name": "custom",
+          "kind": "custom",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "product",
+      "title": "Product",
+      "titleField": "title",
+      "slugField": "slug",
+      "fields": [
+        {
+          "name": "title",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "slug",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "kind": "richtext",
+          "required": false
+        },
+        {
+          "name": "price",
+          "kind": "number",
+          "required": false
+        },
+        {
+          "name": "currency",
+          "kind": "select",
+          "required": false,
+          "options": [
+            "ILS",
+            "USD"
+          ]
+        },
+        {
+          "name": "images",
+          "kind": "gallery",
+          "required": false,
+          "repeated": true
+        },
+        {
+          "name": "inStock",
+          "kind": "boolean",
+          "required": false
+        },
+        {
+          "name": "seo",
+          "kind": "seo",
+          "required": false
+        },
+        {
+          "name": "custom",
+          "kind": "custom",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "collection",
+      "title": "Collection",
+      "titleField": "title",
+      "slugField": "slug",
+      "fields": [
+        {
+          "name": "title",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "slug",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "items",
+          "kind": "reference",
+          "required": false,
+          "repeated": true,
+          "to": [
+            "page",
+            "post",
+            "product"
+          ]
+        },
+        {
+          "name": "description",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "custom",
+          "kind": "custom",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "objects": [
+    {
+      "key": "faq",
+      "title": "Question and answer",
+      "fields": [
+        {
+          "name": "question",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "answer",
+          "kind": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "key": "galleryImage",
+      "title": "Gallery image",
+      "fields": [
+        {
+          "name": "image",
+          "kind": "image",
+          "required": true
+        },
+        {
+          "name": "alt",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "caption",
+          "kind": "text",
+          "required": false
+        }
+      ]
+    }
+  ]
+}

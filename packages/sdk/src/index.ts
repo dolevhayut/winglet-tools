@@ -123,6 +123,9 @@ export {
   CONTENT_TYPE_KEYS,
   CONTENT_TYPE_LIST,
   FIELD_KINDS,
+  OBJECTS,
+  OBJECT_FIELD_KINDS,
+  OBJECT_LIST,
   isContentTypeKey,
 } from './definitions'
 export type {
@@ -130,6 +133,7 @@ export type {
   ContentTypeDefinition,
   FieldDefinition,
   FieldKind,
+  ObjectDefinition,
 } from './definitions'
 
 /* ── errors ───────────────────────────────────────────────────────────────── */
@@ -163,9 +167,12 @@ export type {
   DocumentMeta,
   DocumentOptions,
   DocumentStatus,
+  FaqObject,
+  GalleryImageObject,
   HeroBlock,
   ImageRef,
   ListOptions,
+  ObjectItemMeta,
   Page,
   PageFields,
   PortableTextBlock,

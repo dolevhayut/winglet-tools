@@ -15,9 +15,10 @@ import type {
   BlockDefinition,
   ContentTypeDefinition,
   FieldDefinition,
+  ObjectDefinition,
 } from '../../sdk/src/definitions'
-import { BLOCK_LIST, CONTENT_TYPE_LIST } from '../../sdk/src/definitions'
-import { fieldType } from '../../sdk/src/typegen'
+import { BLOCK_LIST, CONTENT_TYPE_LIST, OBJECT_LIST } from '../../sdk/src/definitions'
+import { fieldType, objectNameFor } from '../../sdk/src/typegen'
 
 /**
  * §11: "`AGENTS.md` — נוצר אוטומטית בשורש הפרויקט, מסביר לסוכן איך לצרוך תוכן,
@@ -31,7 +32,8 @@ import { fieldType } from '../../sdk/src/typegen'
  * shared field-to-TypeScript mapping through the workspace path instead. Both
  * packages ship bundled, so nothing about this leaks into either published
  * artifact, and the alternative (restating §8's fields here) is precisely the
- * drift `tests/definitions.test.ts` exists to prevent.
+ * drift `definitions.snapshot.json` and the private repo's
+ * `tools/guards/definitions-sync.test.ts` exist to prevent.
  *
  * WHY THIS FILE IS MERGED AND NEVER OVERWRITTEN
  * ---------------------------------------------
@@ -51,6 +53,7 @@ export interface AgentsFileInput {
   readonly appDirLabel: string
   readonly contentTypes?: readonly ContentTypeDefinition[]
   readonly blocks?: readonly BlockDefinition[]
+  readonly objects?: readonly ObjectDefinition[]
 }
 
 /* ── field rendering ──────────────────────────────────────────────────────── */
@@ -60,6 +63,7 @@ function fieldNotes(field: FieldDefinition): string {
   if (field.options !== undefined) notes.push(`one of ${field.options.join(', ')}`)
   if (field.to !== undefined) notes.push(`references ${field.to.join(', ')}`)
   if (field.blocks !== undefined) notes.push(`blocks: ${field.blocks.join(', ')}`)
+  if (field.of !== undefined) notes.push(`object \`${field.of}\``)
   return notes.join('; ')
 }
 
@@ -104,12 +108,26 @@ function blockSection(block: BlockDefinition): string[] {
   ]
 }
 
+function objectSection(object: ObjectDefinition): string[] {
+  return [
+    `#### \`${object.key}\` — ${object.title}`,
+    '',
+    `TypeScript type \`${objectNameFor(object.key)}\` in \`${TYPES_FILE}\`.`,
+    '',
+    '| Field | Type | Notes |',
+    '| --- | --- | --- |',
+    ...fieldRows(object.fields),
+    '',
+  ]
+}
+
 /* ── the managed block ────────────────────────────────────────────────────── */
 
 /** The text between the markers. Pure: same input, same bytes, every run. */
 export function agentsBlock(input: AgentsFileInput): string {
   const contentTypes = input.contentTypes ?? CONTENT_TYPE_LIST
   const blocks = input.blocks ?? BLOCK_LIST
+  const objects = input.objects ?? OBJECT_LIST
   const keys = contentTypes.map((definition) => definition.key)
   const singular = keys.map((key) => `get${key.charAt(0).toUpperCase()}${key.slice(1)}`)
   const first = singular[0] ?? 'getPage'
@@ -159,7 +177,9 @@ export function agentsBlock(input: AgentsFileInput): string {
     '3. **A missing document is `null`, not an exception.** Handle it — usually with',
     "   `notFound()` from `next/navigation`.",
     `4. **Do not edit \`${TYPES_FILE}\`.** It is generated; every edit is lost on the next run.`,
-    '5. **Do not invent content types or fields.** The set below is fixed in this version.',
+    '5. **Do not invent content types or fields.** The types below are fixed in this',
+    '   version. Reusable OBJECT shapes are not — define them with the CLI (see Objects),',
+    '   never by writing a shape the project has not registered.',
     '',
     '### Content types',
     '',
@@ -180,6 +200,32 @@ export function agentsBlock(input: AgentsFileInput): string {
     '```',
     '',
     ...blocks.flatMap(blockSection),
+    '### Objects',
+    '',
+    'A field of kind `object` carries a reusable shape this project defines. With',
+    '`repeated` it is an array of them, and every element carries a `_key` the server',
+    'minted — a stable id that survives reordering:',
+    '',
+    '```ts',
+    'for (const item of page.faq ?? []) {',
+    '  // item._key is stable; the array index is not',
+    '}',
+    '```',
+    '',
+    'Define your own from the command line; they appear in the studio as editable rows',
+    'and in the generated types on the next `types` run:',
+    '',
+    '```bash',
+    `npx ${CLI_BIN} objects list`,
+    `npx ${CLI_BIN} objects add priceRow --title "Price row" \\`,
+    '  --field label:string! --field price:number! --field suffix:string',
+    '```',
+    '',
+    'Changes are **additive only**. A field may be added; none may be removed, renamed,',
+    'retyped, or made required — documents already stored still carry the old shape, and',
+    'that rule is what makes schema changes need no migration and no downtime.',
+    '',
+    ...objects.flatMap(objectSection),
     '### Caching and publishing',
     '',
     'Reads are tagged Next.js `fetch` caches, so a publish in the studio purges exactly the',
@@ -204,10 +250,11 @@ export function agentsBlock(input: AgentsFileInput): string {
     '### CLI',
     '',
     '```bash',
-    `npx ${CLI_BIN} types    # regenerate ${TYPES_FILE}`,
-    `npx ${CLI_BIN} pull     # write the content to local JSON`,
-    `npx ${CLI_BIN} usage    # counters against plan limits`,
-    `npx ${CLI_BIN} claim    # reprint the owner claim link`,
+    `npx ${CLI_BIN} types         # regenerate ${TYPES_FILE} from this project’s model`,
+    `npx ${CLI_BIN} objects list  # the reusable shapes this project defines`,
+    `npx ${CLI_BIN} pull          # write the content to local JSON`,
+    `npx ${CLI_BIN} usage         # counters against plan limits`,
+    `npx ${CLI_BIN} claim         # reprint the owner claim link`,
     '```',
     '',
     MARKER_END,

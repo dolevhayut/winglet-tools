@@ -6,6 +6,8 @@ import type {
   CollectionFields,
   ContentTypeKey,
   DocumentMeta,
+  FaqObject,
+  GalleryImageObject,
   ImageRef,
   Page,
   PageFields,
@@ -126,12 +128,43 @@ export const blockObject = z.discriminatedUnion('_type', [
 
 const blockSchema: z.ZodType<Block> = blockObject
 
+/* ── registered objects (M10) ─────────────────────────────────────────────── */
+
+/**
+ * The `_key` the server stamps on every element of an `array<object>`.
+ *
+ * Optional on the read side rather than required, deliberately: a document
+ * written before M10, or restored from a version snapshot that predates it, has
+ * items with no key. Demanding one would turn old-but-valid content into a
+ * `ContentValidationError` on the customer's site, which is the one failure a
+ * CMS may never cause.
+ */
+export const objectItemMetaObject = z.object({
+  _key: z.string().optional(),
+})
+
+export const faqObject = objectItemMetaObject.extend({
+  question: z.string(),
+  answer: z.string(),
+})
+
+export const galleryImageObject = objectItemMetaObject.extend({
+  image: imageRefSchema,
+  alt: z.string(),
+  caption: z.string().optional(),
+})
+
+const faqSchema: z.ZodType<FaqObject> = faqObject
+const galleryImageSchema: z.ZodType<GalleryImageObject> = galleryImageObject
+
 /* ── the four content types ───────────────────────────────────────────────── */
 
 export const pageFieldsObject = z.object({
   title: z.string(),
   slug: z.string(),
   sections: z.array(blockSchema).optional(),
+  faq: z.array(faqSchema).optional(),
+  gallery: z.array(galleryImageSchema).optional(),
   seo: seoSchema.optional(),
   custom: customObject.optional(),
 })
