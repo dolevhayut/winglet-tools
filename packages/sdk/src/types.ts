@@ -116,6 +116,41 @@ export interface CtaBlock {
 /** Discriminated on `_type`, closed on purpose (see `definitions.ts`). */
 export type Block = HeroBlock | RichtextBlock | CtaBlock
 
+/* ── documents of a project-defined type (M11) ────────────────────────────── */
+
+/**
+ * The metadata every document carries, for a type key this build cannot name.
+ *
+ * `DocumentMeta` is generic over the four-key union so `page._type` narrows to
+ * the literal `'page'`. A type the customer defined has no literal to narrow to,
+ * so it gets `string` — the honest answer, and the reason this is a separate
+ * interface rather than a loosening of the one above.
+ */
+export interface DynamicDocumentMeta {
+  readonly _id: string
+  readonly _type: string
+  readonly _status: DocumentStatus
+  readonly _locale: string
+  /** ISO-8601, UTC. */
+  readonly _updatedAt: string
+}
+
+/**
+ * A document of a type defined by the project rather than compiled into the SDK.
+ *
+ * The fields default to an open record, because this package genuinely does not
+ * know them. Pass the interface the type generator wrote for your project and
+ * they become precise:
+ *
+ *   const room = await client.get<Accommodation>('accommodation', 'cabin-north')
+ *
+ * That is the whole loop: the agent defines the type, `types` generates the
+ * interface, and the compiler checks the code against the schema the agent
+ * itself chose.
+ */
+export type DynamicDocument<TFields = Readonly<Record<string, unknown>>> = TFields &
+  DynamicDocumentMeta
+
 /* ── registered objects (M10) ─────────────────────────────────────────────── */
 
 /**
@@ -232,13 +267,32 @@ export interface BuildPayload {
   readonly projectId: string
   /** Monotonic per project; changes on every publish. Useful as a build key. */
   readonly contentVersion: number
-  readonly types: readonly ContentTypeKey[]
+  /**
+   * Every type key the project holds — `string`, not the four-key union, since
+   * M11. A build that ignored the customer's own types would be a build that
+   * silently omitted most of their site.
+   */
+  readonly types: readonly string[]
+  /** The four seeded types, with their precise interfaces. */
   readonly documents: {
     readonly page: readonly Page[]
     readonly post: readonly Post[]
     readonly product: readonly Product[]
     readonly collection: readonly Collection[]
   }
+  /**
+   * Documents of the types THIS PROJECT defined, keyed by type key (M11).
+   *
+   * A sibling map rather than extra keys on `documents`, and that is forced
+   * rather than chosen: adding an index signature to the object above would
+   * require `Page` to be assignable to `Record<string, unknown>`, which a
+   * TypeScript *interface* never is. Trying it costs `documents.page[0].title`
+   * its type — the four seeded types would go from precise to `unknown` to buy
+   * dot-access on the dynamic ones. This keeps both.
+   *
+   * Empty for a project that only uses the seeded four.
+   */
+  readonly documentsByType: Readonly<Record<string, readonly DynamicDocument[]>>
   readonly total: number
   /** True when the project holds more documents than one payload carries. */
   readonly truncated: boolean

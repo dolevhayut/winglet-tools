@@ -1,7 +1,12 @@
 import { TYPES_FILE } from '@product'
 import { describe, expect, it } from 'vitest'
 
-import { BLOCK_LIST, CONTENT_TYPE_LIST, OBJECT_LIST } from '../src/definitions'
+import {
+  BLOCK_LIST,
+  CONTENT_TYPE_KEYS,
+  CONTENT_TYPE_LIST,
+  OBJECT_LIST,
+} from '../src/definitions'
 import type { BlockDefinition, ContentTypeDefinition } from '../src/definitions'
 import { FIELD_SCHEMAS } from '../src/schemas'
 import {
@@ -192,7 +197,10 @@ describe('content types', () => {
 })
 
 describe('the generated types agree with the runtime schemas', () => {
-  it.each(CONTENT_TYPE_LIST.map((definition) => definition.key))(
+  // Iterates CONTENT_TYPE_KEYS, not the definitions' `key` field: since M11 that
+  // field is a plain `string` (a project defines its own types), and only the
+  // four seeded keys have a compiled schema to compare against.
+  it.each(CONTENT_TYPE_KEYS)(
     '%s: same field names, same optionality',
     (key) => {
       const generated = fieldLines(output, `${typeNameFor(key)}Fields`).map((line) => {
@@ -311,5 +319,66 @@ describe('registered objects', () => {
     })
     expect(custom).toContain('export interface PriceRowObject extends ObjectItemMeta {')
     expect(custom).not.toContain('FaqObject')
+  })
+})
+
+/* ── project-defined types (M11) ──────────────────────────────────────────── */
+
+describe('types the project defined rather than the SDK', () => {
+  const ACCOMMODATION: ContentTypeDefinition = {
+    key: 'accommodation',
+    title: 'מתחם אירוח',
+    titleField: 'title',
+    slugField: 'slug',
+    fields: [
+      { name: 'title', kind: 'string', required: true },
+      { name: 'slug', kind: 'string', required: true },
+      { name: 'sleeps', kind: 'number', required: false },
+      { name: 'visibility', kind: 'select', required: false, options: ['listed', 'hidden'] },
+      { name: 'gallery', kind: 'object', required: false, repeated: true, of: 'galleryImage' },
+      { name: 'sections', kind: 'blocks', required: false, repeated: true, blocks: ['hero', 'cta'] },
+      { name: 'oldField', kind: 'string', required: false, deprecated: true },
+    ],
+  }
+
+  const generated = generateTypes({
+    contentTypes: [ACCOMMODATION],
+    blocks: BLOCK_LIST,
+    objects: OBJECT_LIST,
+  })
+
+  it('emits the interface pair under the project’s own key', () => {
+    expect(generated).toContain('export interface AccommodationFields {')
+    expect(generated).toContain(
+      "export interface Accommodation extends AccommodationFields, DocumentMeta<'accommodation'> {}",
+    )
+  })
+
+  it('puts the key in the union and the map', () => {
+    expect(generated).toContain("export type ContentTypeKey = 'accommodation'")
+    expect(generated).toContain('readonly accommodation: Accommodation')
+  })
+
+  it('resolves every field kind, including the ones read back from jsonb', () => {
+    expect(fieldLines(generated, 'AccommodationFields')).toEqual([
+      'readonly title: string',
+      'readonly slug: string',
+      'readonly sleeps?: number | undefined',
+      "readonly visibility?: 'listed' | 'hidden' | undefined",
+      'readonly gallery?: readonly GalleryImageObject[] | undefined',
+      // The regression this pins: `blocks` used to be dropped on the way from
+      // the API to the generator, so a project-sourced `sections` came out as
+      // `readonly never[]` — readable, never assignable.
+      'readonly sections?: readonly (HeroBlock | CtaBlock)[] | undefined',
+      'readonly oldField?: string | undefined',
+    ])
+  })
+
+  it('marks a retired field @deprecated instead of dropping it', () => {
+    // Dropping it would turn "still served by the API" into a compile error on
+    // the customer's next `types` run — the exact breakage deprecation exists
+    // to avoid.
+    expect(generated).toContain('@deprecated')
+    expect(generated).toContain('readonly oldField?: string | undefined')
   })
 })

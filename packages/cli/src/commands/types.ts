@@ -4,7 +4,12 @@ import { join } from 'node:path'
 import { CLI_BIN, ENV, TYPES_FILE } from '@product'
 
 import { fetchProjectModel } from '../api'
-import type { ModelContentTypeDefinition, ModelObjectDefinition, ProjectModel } from '../api'
+import type {
+  ModelContentTypeDefinition,
+  ModelFieldDefinition,
+  ModelObjectDefinition,
+  ProjectModel,
+} from '../api'
 import type {
   BlockDefinition,
   ContentTypeDefinition,
@@ -14,7 +19,6 @@ import type {
 } from '../../../sdk/src/definitions'
 import {
   BLOCK_LIST,
-  CONTENT_TYPE_KEYS,
   CONTENT_TYPE_LIST,
   FIELD_KINDS,
   OBJECT_LIST,
@@ -67,14 +71,7 @@ const KNOWN_KINDS: ReadonlySet<string> = new Set(FIELD_KINDS)
  * (the field is simply absent from their types) and recoverable (upgrade the
  * CLI); emitting garbage is neither.
  */
-function toFieldDefinition(field: {
-  readonly name: string
-  readonly kind: string
-  readonly required: boolean
-  readonly repeated?: boolean | undefined
-  readonly options?: readonly string[] | undefined
-  readonly of?: string | undefined
-}): FieldDefinition | undefined {
+function toFieldDefinition(field: ModelFieldDefinition): FieldDefinition | undefined {
   if (!KNOWN_KINDS.has(field.kind)) return undefined
   return {
     name: field.name,
@@ -83,6 +80,14 @@ function toFieldDefinition(field: {
     ...(field.repeated === true ? { repeated: true } : {}),
     ...(field.options === undefined ? {} : { options: field.options }),
     ...(field.of === undefined ? {} : { of: field.of }),
+    // `blocks` and `to` are not decoration. `elementType` builds the block union
+    // from `blocks`, so dropping it generated `sections?: readonly never[]` —
+    // a field the customer can read but can never assign to. It was invisible
+    // while types came from the compiled constants and became reachable the
+    // moment they started coming from the project.
+    ...(field.blocks === undefined ? {} : { blocks: field.blocks }),
+    ...(field.to === undefined ? {} : { to: field.to }),
+    ...(field.deprecated === true ? { deprecated: true } : {}),
   }
 }
 
@@ -98,19 +103,18 @@ function toObjectDefinition(object: ModelObjectDefinition): ObjectDefinition {
 }
 
 /**
- * The generator's `ContentTypeDefinition.key` is the four-value union, because
- * the SDK's own `Page`/`Post`/… interfaces are keyed by it. A project cannot yet
- * hold any other key — content types become definable in M11 — so a type key
- * this build does not recognise is skipped rather than forced through.
+ * Every type the project holds, whatever its key.
+ *
+ * This used to skip anything outside the four-key union, because that union was
+ * the whole vocabulary and a stray key could only be corruption. Since M11 a
+ * project defines its own types, and skipping them would mean the one command
+ * whose entire job is "describe this project to the compiler" quietly omitted
+ * most of the project.
  */
-function toContentTypeDefinition(
-  type: ModelContentTypeDefinition,
-): ContentTypeDefinition | undefined {
-  const known = (CONTENT_TYPE_KEYS as readonly string[]).includes(type.key)
-  if (!known) return undefined
+function toContentTypeDefinition(type: ModelContentTypeDefinition): ContentTypeDefinition {
   const base = toObjectDefinition(type)
   return {
-    key: type.key as ContentTypeDefinition['key'],
+    key: type.key,
     title: base.title,
     titleField: type.titleField,
     slugField: type.slugField,
@@ -120,10 +124,7 @@ function toContentTypeDefinition(
 
 function toTypegenInput(model: ProjectModel, blocks: readonly BlockDefinition[]): TypegenInput {
   return {
-    contentTypes: model.types.flatMap((type) => {
-      const parsed = toContentTypeDefinition(type)
-      return parsed === undefined ? [] : [parsed]
-    }),
+    contentTypes: model.types.map(toContentTypeDefinition),
     blocks,
     objects: model.objects.map(toObjectDefinition),
   }

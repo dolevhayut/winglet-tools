@@ -17,8 +17,10 @@ import type { ClaimRecord } from '../local-config'
 import { writeLocalConfig } from '../local-config'
 import { generateRevalidateSecret, scaffold } from '../scaffold'
 import type { ScaffoldResult, WrittenFile } from '../scaffold'
+import { TEMPLATE_NAMES, templateNamed } from '../templates'
 import type { CommonOptions } from './context'
-import { emitJson, loadPartialContext } from './context'
+import { emitJson, loadPartialContext, loadProjectContext } from './context'
+import { applyTemplate } from './types-model'
 
 /**
  * `init` — PRD §4, the whole product in one command.
@@ -44,6 +46,8 @@ export interface InitOptions extends CommonOptions {
   readonly install?: boolean | undefined
   readonly types?: boolean | undefined
   readonly force?: boolean | undefined
+  /** A content model to start from, e.g. `hospitality` (M11). */
+  readonly template?: string | undefined
 }
 
 interface ResolvedProject {
@@ -276,6 +280,20 @@ export async function initCommand(io: Io, options: InitOptions): Promise<void> {
     updatedAt: now.toISOString(),
   })
 
+  // M11 — the template runs BEFORE the install and before the types file is
+  // reported, so `init --template hospitality` leaves behind a project whose
+  // generated types already describe the model it was given. Applying it after
+  // would produce a types file one command out of date on its very first run.
+  //
+  // A failure here is loud but not fatal to the init: the project, the keys and
+  // `.env.local` are already written and are the expensive, unrepeatable part.
+  // Telling the operator to run one more command beats discarding a project
+  // whose claim link has already been printed.
+  let template: { readonly name: string; readonly applied: boolean; readonly message?: string } | undefined
+  if (options.template !== undefined) {
+    template = await applyTemplateDuringInit(io, options, options.template)
+  }
+
   const install = installSdk({
     root: app.root,
     manager: app.packageManager,
@@ -295,6 +313,7 @@ export async function initCommand(io: Io, options: InitOptions): Promise<void> {
       apiBaseUrl: partial.apiBaseUrl,
       contentTypes: CONTENT_TYPE_LIST.map((definition) => definition.key),
       objects: OBJECT_LIST.map((definition) => definition.key),
+      ...(template === undefined ? {} : { template }),
       files: {
         env: { path: result.env.path, outcome: result.env.outcome, keys: result.envChanged },
         types: result.types === undefined ? null : { path: result.types.path, outcome: result.types.outcome },
@@ -313,4 +332,60 @@ export async function initCommand(io: Io, options: InitOptions): Promise<void> {
   }
 
   report(io, resolved, result, install, now)
+}
+
+/* ── templates during init (M11) ──────────────────────────────────────────── */
+
+interface TemplateReport {
+  readonly name: string
+  readonly applied: boolean
+  readonly message?: string
+}
+
+/**
+ * Applies a template to the project `init` has just created.
+ *
+ * The context is re-loaded from disk rather than threaded through, and that is
+ * deliberate: `.env.local` was written moments ago and is the same source every
+ * other command reads, so this exercises the wiring `init` just produced instead
+ * of trusting values it happens to hold in memory. If the keys it wrote do not
+ * work, this is where that surfaces — during init, not on the operator's next
+ * command.
+ */
+async function applyTemplateDuringInit(
+  io: Io,
+  options: InitOptions,
+  name: string,
+): Promise<TemplateReport> {
+  if (templateNamed(name) === undefined) {
+    const message = `There is no template called "${name}". Available: ${TEMPLATE_NAMES.join(', ')}.`
+    io.writeError(line(MARK.warn, message))
+    return { name, applied: false, message }
+  }
+
+  try {
+    const context = loadProjectContext(io, options)
+    const outcome = await applyTemplate(context, name)
+    if (options.json !== true) {
+      io.write(
+        line(
+          MARK.done,
+          `Applied the "${name}" content model ` +
+            `(${pluralise(outcome.types.created.length, 'type')}, ` +
+            `${pluralise(outcome.objects.created.length, 'object')})`,
+        ),
+      )
+    }
+    return { name, applied: true }
+  } catch (error: unknown) {
+    // Never fatal. The project, its keys and the claim link already exist and
+    // cannot be recreated by re-running; losing them because a template call
+    // failed would be a far worse outcome than one extra command.
+    const message = error instanceof Error ? error.message : String(error)
+    io.writeError(
+      line(MARK.warn, `The project was created, but the "${name}" template did not apply.`),
+    )
+    io.writeError(`  ${message}\n  Run \`${CLI_BIN} templates apply ${name}\` to retry.\n`)
+    return { name, applied: false, message }
+  }
 }

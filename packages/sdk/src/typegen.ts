@@ -140,10 +140,24 @@ export function fieldType(
  * With the flag off (the default) the two forms are identical, so this costs
  * nothing and buys interoperability under every tsconfig.
  */
+/**
+ * A retired field is EMITTED, carrying `@deprecated`.
+ *
+ * Omitting it would be the tidier-looking choice and the wrong one: the whole
+ * point of deprecating rather than deleting is that a site still reading the
+ * field keeps working, and a types file that drops it turns "still served" into
+ * a compile error on the customer's next `types` run. With the tag, their editor
+ * strikes it through and their build stays green — which is exactly the nudge
+ * without the breakage.
+ */
 function fieldLine(field: FieldDefinition, knownObjects: ReadonlySet<string>): string {
   const type = fieldType(field, knownObjects)
-  if (field.required) return `  readonly ${field.name}: ${type}`
-  return `  readonly ${field.name}?: ${type} | undefined`
+  const declaration = field.required
+    ? `  readonly ${field.name}: ${type}`
+    : `  readonly ${field.name}?: ${type} | undefined`
+
+  if (field.deprecated !== true) return declaration
+  return `  /** @deprecated Retired in this project's content model. */\n${declaration}`
 }
 
 function interfaceBlock(name: string, extendsClause: string, fields: readonly string[]): string {

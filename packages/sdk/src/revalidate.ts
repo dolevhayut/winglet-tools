@@ -5,7 +5,6 @@ import { z } from 'zod'
 
 import type { EnvSource } from './config'
 import { readClientConfig, requireRevalidateSecret } from './config'
-import { isContentTypeKey } from './definitions'
 
 /**
  * PRD §11 — the route handler the CLI mounts in the customer's app, and the
@@ -191,19 +190,39 @@ async function safeJson(request: Request): Promise<unknown> {
 }
 
 /**
+ * A type key safe to interpolate into a cache tag.
+ *
+ * Since M11 a project defines its own type keys, so this can no longer be a
+ * membership test against four compiled names — but it must still be a test.
+ * The value arrives in a webhook body, and an unbounded string reaching
+ * `revalidateTag` is a way to make the customer's app purge caches that have
+ * nothing to do with us. The server already constrains keys to this shape.
+ */
+const TYPE_KEY = /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/
+
+/**
  * The project tag is always purged: every read this SDK performs carries it, so
  * one entry here guarantees no stale page survives a publish. Per-type tags are
  * added on top so a caller that wants a narrower purge still gets one.
  *
  * Explicit tags are filtered to this project's namespace. A webhook must not be
  * able to purge unrelated caches in the customer's own application.
+ *
+ * THE BUG M11 WOULD HAVE SHIPPED WITHOUT THIS
+ * -------------------------------------------
+ * `isContentTypeKey` used to gate the loop below, so a publish of any type the
+ * customer had defined added NO per-type tag. The project tag saved it from
+ * being a stale-content bug outright — but the moment anything narrowed the
+ * purge to type tags, publishing `accommodation` would have quietly updated
+ * nothing. Dropping unknown keys is the right instinct for a discriminated
+ * union and exactly the wrong one for a cache tag.
  */
 export function tagsToPurge(projectId: string, body: RevalidateBody): readonly string[] {
   const projectTag = projectCacheTag(projectId)
   const tags = new Set<string>([projectTag])
 
   for (const key of body.typeKeys ?? []) {
-    if (isContentTypeKey(key)) tags.add(cacheTag(projectId, key))
+    if (TYPE_KEY.test(key)) tags.add(cacheTag(projectId, key))
   }
 
   for (const tag of body.tags ?? []) {

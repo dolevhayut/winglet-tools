@@ -108,7 +108,22 @@ function applySet(
 
 /* ── the server ───────────────────────────────────────────────────────────── */
 
-const CONTENT_TYPES = ['page', 'post', 'product', 'collection'] as const
+/**
+ * A content type key, validated by SHAPE rather than by membership (M11).
+ *
+ * This was `z.enum(['page','post','product','collection'])`, which was correct
+ * while those four were the whole vocabulary. A project now defines its own
+ * types, and a closed enum here would have meant an agent connected over MCP
+ * could see `accommodation` in `list_documents` and be unable to create one —
+ * the tool refusing a value the same tool had just returned.
+ *
+ * The server is the authority on which keys exist and answers with the list when
+ * it rejects one, so this only has to keep obviously malformed input out of a
+ * URL segment.
+ */
+const TYPE_KEY = z
+  .string()
+  .regex(/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/, 'Letters, digits and underscores; must start with a letter.')
 
 export function buildServer(config: ServerConfig): McpServer {
   const server = new McpServer({ name: PRODUCT_NAME.toLowerCase(), version: '0.1.0' })
@@ -119,7 +134,9 @@ export function buildServer(config: ServerConfig): McpServer {
       description:
         'List the content documents in this project. Use it to find what exists before changing anything. Optionally filter to one content type.',
       inputSchema: z.object({
-        type: z.enum(CONTENT_TYPES).optional().describe('Restrict to one content type.'),
+        type: TYPE_KEY.optional().describe(
+          'Restrict to one content type. Use list_content_types to see what this project defines.',
+        ),
       }),
       // The hints are what let a client tell a lookup from a change to a live
       // site. Without them every tool looks equally consequential, so a client
@@ -145,6 +162,17 @@ export function buildServer(config: ServerConfig): McpServer {
   )
 
   server.registerTool(
+    'list_content_types',
+    {
+      description:
+        "List this project's content types and the reusable object shapes they use, with every field. Read this before creating or updating a document: the model belongs to the project, not to this server's version, so the available types and fields differ between projects.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async () => result(await call(config, '/types')),
+  )
+
+  server.registerTool(
     'get_document',
     {
       description: 'Read one document in full, including every field, by its id.',
@@ -160,7 +188,9 @@ export function buildServer(config: ServerConfig): McpServer {
       description:
         'Create a new document. It starts as a draft and is NOT on the live site until publish is called.',
       inputSchema: z.object({
-        type: z.enum(CONTENT_TYPES),
+        type: TYPE_KEY.describe(
+          'One of this project\'s content types — see list_content_types.',
+        ),
         slug: z
           .string()
           .describe('URL segment: lowercase letters, digits and hyphens.'),

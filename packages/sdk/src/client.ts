@@ -19,6 +19,7 @@ import type {
   Collection,
   ContentTypeKey,
   DocumentOptions,
+  DynamicDocument,
   ListOptions,
   Page,
   Post,
@@ -65,10 +66,35 @@ export interface ContentClient {
     options?: DocumentOptions,
   ) => Promise<Collection | null>
   readonly getCollections: (options?: ListOptions) => Promise<readonly Collection[]>
+  /**
+   * One document of ANY type the project defines (M11).
+   *
+   * The four seeded types keep their named accessors above, which stay typed
+   * without a type argument. This is the door for everything else — pass the
+   * interface `types` generated for your project and the result is precise:
+   *
+   *   const room = await client.get<Accommodation>('accommodation', slug)
+   *
+   * Runtime validation for these is the SERVER's: it checks a document against
+   * the project's own model on every write, so a shape that reached storage
+   * already matched. This package cannot re-check it, because the schema is not
+   * compiled in — and pretending otherwise, by validating against nothing,
+   * would be worse than being honest about where the check happens.
+   */
+  readonly get: <TFields = Readonly<Record<string, unknown>>>(
+    typeKey: string,
+    slug: string,
+    options?: DocumentOptions,
+  ) => Promise<DynamicDocument<TFields> | null>
+  /** The list form of `get`. */
+  readonly list: <TFields = Readonly<Record<string, unknown>>>(
+    typeKey: string,
+    options?: ListOptions,
+  ) => Promise<readonly DynamicDocument<TFields>[]>
   /** The whole project in one request — what a static build wants. */
   readonly getAll: () => Promise<BuildPayload>
   /** The tags every read from this client carries. */
-  readonly tags: (typeKey?: ContentTypeKey) => readonly string[]
+  readonly tags: (typeKey?: string) => readonly string[]
   readonly projectId: string
   readonly preview: boolean
 }
@@ -157,7 +183,7 @@ export function createClient(options: ClientOptions = {}): ContentClient {
   const resolved = resolve(options)
   const { projectId } = resolved.config
 
-  const tags = (typeKey?: ContentTypeKey): readonly string[] =>
+  const tags = (typeKey?: string): readonly string[] =>
     typeKey === undefined
       ? [projectCacheTag(projectId)]
       : [projectCacheTag(projectId), cacheTag(projectId, typeKey)]
@@ -212,10 +238,80 @@ export function createClient(options: ClientOptions = {}): ContentClient {
     return body.documents.map((wire) => decode(typeKey, wire, spec.path))
   }
 
+  /**
+   * Decodes a document of a type this build has no schema for.
+   *
+   * `slug` is layered in from the envelope for the same reason as `decode`
+   * above: it is a column, not a payload field, and only the seeded document
+   * happens to carry a copy inside its data.
+   */
+  function decodeDynamic<TFields>(wire: WireDocument): DynamicDocument<TFields> {
+    const payload =
+      typeof wire.data === 'object' && wire.data !== null
+        ? { ...(wire.data as Record<string, unknown>), slug: wire.slug }
+        : { slug: wire.slug }
+
+    return {
+      ...(payload as TFields),
+      _id: wire.id,
+      _type: wire.type,
+      _status: wire.status,
+      _locale: wire.locale,
+      _updatedAt: wire.updated_at,
+    }
+  }
+
+  async function get<TFields>(
+    typeKey: string,
+    slug: string,
+    documentOptions: DocumentOptions = {},
+  ): Promise<DynamicDocument<TFields> | null> {
+    const spec: RequestSpec = {
+      path: `/content/${encodeSegment(typeKey)}/${encodeSegment(slug)}`,
+      search: { status: statusFor(), locale: documentOptions.locale },
+      tags: tags(typeKey),
+    }
+
+    let body: WireSingle
+    try {
+      body = await requestJson(resolved.http, spec, wireSingleSchema)
+    } catch (error: unknown) {
+      if (error instanceof ApiResponseError && error.code === 'PROJECT_NOT_FOUND') return null
+      throw error
+    }
+
+    return decodeDynamic<TFields>('document' in body ? body.document : body)
+  }
+
+  async function list<TFields>(
+    typeKey: string,
+    listOptions: ListOptions = {},
+  ): Promise<readonly DynamicDocument<TFields>[]> {
+    const spec: RequestSpec = {
+      path: `/content/${encodeSegment(typeKey)}`,
+      search: {
+        status: statusFor(),
+        limit: listOptions.limit,
+        offset: listOptions.offset,
+        tag: listOptions.tag,
+        locale: listOptions.locale,
+      },
+      tags: tags(typeKey),
+    }
+
+    const body = await requestJson(resolved.http, spec, wireListSchema)
+    return body.documents.map((wire) => decodeDynamic<TFields>(wire))
+  }
+
   async function getAll(): Promise<BuildPayload> {
     const spec: RequestSpec = {
       path: `/content/${ALL_TYPE_KEY}`,
       search: { status: statusFor() },
+      // The per-type tags cannot be enumerated before the response arrives, so
+      // the PROJECT tag is what makes this purgeable: a publish of any type
+      // fires it, which is exactly the granularity a whole-project payload
+      // deserves. The four seeded tags are kept so a build that reads `_all`
+      // and a page that reads `getPage` are invalidated by the same publish.
       tags: [projectCacheTag(projectId), ...CONTENT_TYPE_KEYS.map((key) => cacheTag(projectId, key))],
     }
 
@@ -224,18 +320,28 @@ export function createClient(options: ClientOptions = {}): ContentClient {
     const bucket = <K extends ContentTypeKey>(typeKey: K): readonly AssembledDocument<K>[] =>
       (body.documents[typeKey] ?? []).map((wire) => decode(typeKey, wire, spec.path))
 
+    // Everything the project holds that this build has no schema for. Until M11
+    // these were silently dropped, on the reasoning that the caller could not
+    // switch on a string they had never seen. That reasoning cost the customer
+    // most of their own site the moment they defined a type: a build payload
+    // that omits `accommodation` is not a build payload.
+    const dynamic: Record<string, readonly DynamicDocument[]> = {}
+    for (const typeKey of body.types) {
+      if (isContentTypeKey(typeKey)) continue
+      dynamic[typeKey] = (body.documents[typeKey] ?? []).map((wire) => decodeDynamic(wire))
+    }
+
     return {
       projectId: body.project_id,
       contentVersion: body.content_version,
-      // A type the server knows but this SDK version does not is dropped rather
-      // than widening the union with a string the caller cannot switch on.
-      types: body.types.filter(isContentTypeKey),
+      types: body.types,
       documents: {
         page: bucket('page'),
         post: bucket('post'),
         product: bucket('product'),
         collection: bucket('collection'),
       },
+      documentsByType: dynamic,
       total: body.total,
       truncated: body.truncated,
     }
@@ -250,6 +356,8 @@ export function createClient(options: ClientOptions = {}): ContentClient {
     getProducts: (listOptions) => getList('product', listOptions),
     getCollection: (slug, documentOptions) => getDocument('collection', slug, documentOptions),
     getCollections: (listOptions) => getList('collection', listOptions),
+    get,
+    list,
     getAll,
     tags,
     projectId,

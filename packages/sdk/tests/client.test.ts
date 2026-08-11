@@ -229,20 +229,105 @@ describe('the documents it returns', () => {
     expect((await client.getPage('home'))?.title).toBe('Home')
   })
 
-  it('drops a content type the server knows and this version does not', async () => {
+  it('keeps a type the PROJECT defined and this version was not compiled with', async () => {
+    // This used to drop it, on the reasoning that a caller cannot switch on a
+    // string they have never seen. Since M11 that reasoning costs the customer
+    // most of their own site: a build payload that omits `accommodation` is not
+    // a build payload.
     const spy = recorder(() =>
       ok({
         project_id: PROJECT,
         content_version: 1,
-        types: ['page', 'faq'],
-        documents: { page: [], faq: [] },
+        types: ['page', 'accommodation'],
+        documents: {
+          page: [],
+          accommodation: [
+            {
+              id: 'doc-1',
+              type: 'accommodation',
+              slug: 'cabin-north',
+              status: 'published',
+              locale: 'he',
+              data: { title: 'בקתת הצפון', sleeps: 4 },
+              updated_at: '2026-08-11T00:00:00.000Z',
+            },
+          ],
+        },
+        total: 1,
+        truncated: false,
+      }),
+    )
+    const client = createClient({ env: ENVIRONMENT, fetchImplementation: spy.fetchImplementation })
+    const payload = await client.getAll()
+
+    expect(payload.types).toEqual(['page', 'accommodation'])
+
+    const rooms = payload.documentsByType['accommodation'] ?? []
+    expect(rooms).toHaveLength(1)
+    expect(rooms[0]?._type).toBe('accommodation')
+    expect(rooms[0]?.['title']).toBe('בקתת הצפון')
+    // The envelope's slug wins over anything inside the payload, exactly as it
+    // does for the compiled four.
+    expect(rooms[0]?.['slug']).toBe('cabin-north')
+  })
+
+  it('leaves the seeded four out of the dynamic map', async () => {
+    const spy = recorder(() =>
+      ok({
+        project_id: PROJECT,
+        content_version: 1,
+        types: ['page'],
+        documents: { page: [] },
         total: 0,
         truncated: false,
       }),
     )
     const client = createClient({ env: ENVIRONMENT, fetchImplementation: spy.fetchImplementation })
 
-    expect((await client.getAll()).types).toEqual(['page'])
+    expect((await client.getAll()).documentsByType).toEqual({})
+  })
+})
+
+/* ── documents of a project-defined type (M11) ────────────────────────────── */
+
+describe('get and list, for a type this build has no schema for', () => {
+  const ROOM = {
+    id: 'doc-9',
+    type: 'accommodation',
+    slug: 'cabin-north',
+    status: 'published',
+    locale: 'he',
+    data: { title: 'בקתת הצפון', sleeps: 4 },
+    updated_at: '2026-08-11T00:00:00.000Z',
+  }
+
+  it('reads one, tagged by its own type key', async () => {
+    const spy = recorder(() => ok({ document: ROOM }))
+    const client = createClient({ env: ENVIRONMENT, fetchImplementation: spy.fetchImplementation })
+
+    const room = await client.get('accommodation', 'cabin-north')
+
+    expect(room?.['title']).toBe('בקתת הצפון')
+    expect(room?._type).toBe('accommodation')
+    expect(client.tags('accommodation')).toContain(cacheTag(PROJECT, 'accommodation'))
+  })
+
+  it('returns null for a slug that does not exist, like the typed accessors', async () => {
+    const spy = recorder(() => failure(404, 'PROJECT_NOT_FOUND'))
+    const client = createClient({ env: ENVIRONMENT, fetchImplementation: spy.fetchImplementation })
+
+    await expect(client.get('accommodation', 'nope')).resolves.toBeNull()
+  })
+
+  it('reads a list', async () => {
+    const spy = recorder(() =>
+      ok({ type: 'accommodation', documents: [ROOM], pagination: { limit: 20, offset: 0, total: 1 } }),
+    )
+    const client = createClient({ env: ENVIRONMENT, fetchImplementation: spy.fetchImplementation })
+
+    const rooms = await client.list('accommodation')
+    expect(rooms).toHaveLength(1)
+    expect(rooms[0]?.['sleeps']).toBe(4)
   })
 })
 

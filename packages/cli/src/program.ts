@@ -25,6 +25,21 @@ import {
   objectsRmCommand,
   objectsSetCommand,
 } from './commands/objects'
+import {
+  templatesApplyCommand,
+  templatesListCommand,
+  typeAddCommand,
+  typeRmCommand,
+  typeSetCommand,
+  typesListCommand,
+} from './commands/types-model'
+import type {
+  TemplateApplyOptions,
+  TypeAddOptions,
+  TypeRmOptions,
+  TypeSetOptions,
+  TypesListOptions,
+} from './commands/types-model'
 import type {
   ObjectsAddOptions,
   ObjectsListOptions,
@@ -116,10 +131,15 @@ export function buildProgram(io: Io): Command {
       '',
       'Typical use, start to finish:',
       `  npx ${CLI_BIN} init            create a project and wire it into this site`,
+      `  npx ${CLI_BIN} init --template hospitality   …with a ready-made content model`,
       `  npx ${CLI_BIN} types           refresh ${TYPES_FILE} after a CLI upgrade`,
       `  npx ${CLI_BIN} claim           reprint the owner adoption link`,
       '',
       'Shaping the content model:',
+      `  ${CLI_BIN} templates list           ready-made models for a kind of business`,
+      `  ${CLI_BIN} templates apply <name>   add one, e.g. hospitality`,
+      `  ${CLI_BIN} types list               the content types this project defines`,
+      `  ${CLI_BIN} types add <key>          define one from scratch`,
       `  ${CLI_BIN} objects list             the reusable field shapes this project defines`,
       `  ${CLI_BIN} objects add <key>        register one, e.g. --field question:string!`,
       `  ${CLI_BIN} objects set <key>        extend one — additive only`,
@@ -147,21 +167,119 @@ export function buildProgram(io: Io): Command {
     .option('--agent-fingerprint <value>', 'identifies the agent running this, for abuse handling')
     .option('--no-install', `do not install ${SDK_PACKAGE}`)
     .option('--no-types', `do not generate ${TYPES_FILE}`)
+    .option('--template <name>', 'start from a content model, e.g. hospitality')
     .option('--force', 'overwrite a revalidate route handler you have edited')
     .option('--json', JSON_HELP)
     .action(async (options: InitOptions) => {
       await initCommand(io, options)
     })
 
-  program
+  /**
+   * `types` — the content model itself (M11).
+   *
+   * `types` with no subcommand keeps its original meaning, regenerating the
+   * types file: that is the command every existing project and every piece of
+   * documentation already calls, and quietly turning it into a group would break
+   * all of them. The model verbs live under it as subcommands.
+   */
+  const types = program
     .command('types')
     .description(`regenerate ${TYPES_FILE} from this project’s content model`)
     .option(CWD_FLAG, CWD_HELP)
     .option('--api-url <url>', API_URL_HELP)
     .option('--local', 'generate from the built-in schema without contacting the API')
     .option('--json', JSON_HELP)
-    .action(async (options: TypesOptions) => {
+    .action(async (options: TypesOptions, command: Command) => {
+      // Commander runs a group's own action only when no subcommand matched.
+      if (command.args.length > 0) return
       await typesCommand(io, options)
+    })
+
+  types
+    .command('list')
+    .description('every content type this project defines (always JSON)')
+    .option('--no-objects', 'omit the object registry from the output')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .action(async (options: TypesListOptions) => {
+      await typesListCommand(io, options)
+    })
+
+  types
+    .command('add')
+    .argument('<key>', 'the type key, e.g. accommodation')
+    .description('define a content type')
+    .option('--title <title>', 'human label for the studio (default: the key)')
+    .option('--title-field <name>', 'which field titles a row (default: title)')
+    .option('--slug-field <name>', 'which field addresses the document (default: slug)')
+    .option(
+      '--field <spec...>',
+      'repeatable; name:kind, plus name:object<shape> for a registered object',
+      collectSet,
+      [],
+    )
+    .option('--fields <json>', 'the full field list as a JSON array, or @path to a file')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (key: string, options: TypeAddOptions) => {
+      await typeAddCommand(io, key, options)
+    })
+
+  types
+    .command('set')
+    .argument('<key>', 'the type to change')
+    .description('extend a type — additive only; retire a field with deprecated')
+    .option('--rename <title>', 'change the human label')
+    .option('--title-field <name>', 'which field titles a row')
+    .option('--slug-field <name>', 'which field addresses the document')
+    .option('--field <spec...>', 'repeatable; the FULL field list, existing fields included', collectSet, [])
+    .option('--fields <json>', 'the full field list as a JSON array, or @path to a file')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (key: string, options: TypeSetOptions) => {
+      await typeSetCommand(io, key, options)
+    })
+
+  types
+    .command('rm')
+    .argument('<key>', 'the type to remove')
+    .description('remove a type — refused while documents of it exist')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (key: string, options: TypeRmOptions) => {
+      await typeRmCommand(io, key, options)
+    })
+
+  /**
+   * `templates` — a whole content model in one command.
+   *
+   * The answer to "the agent invents schemas": starting from a model somebody
+   * thought about is the main path, and defining from scratch is the advanced
+   * one.
+   */
+  const templates = program
+    .command('templates')
+    .description('ready-made content models for a kind of business')
+
+  templates
+    .command('list')
+    .description('every template and what it defines (always JSON)')
+    .action(() => {
+      templatesListCommand(io)
+    })
+
+  templates
+    .command('apply')
+    .argument('<name>', 'e.g. hospitality')
+    .description('add a template’s types and objects — never overwrites what exists')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (name: string, options: TemplateApplyOptions) => {
+      await templatesApplyCommand(io, name, options)
     })
 
   /**

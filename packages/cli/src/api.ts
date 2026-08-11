@@ -578,11 +578,13 @@ export interface ModelFieldDefinition {
   readonly name: string
   readonly kind: string
   readonly required: boolean
+  readonly title?: string | undefined
   readonly repeated?: boolean | undefined
   readonly options?: readonly string[] | undefined
   readonly to?: readonly string[] | undefined
   readonly blocks?: readonly string[] | undefined
   readonly of?: string | undefined
+  readonly deprecated?: boolean | undefined
 }
 
 export interface ModelObjectDefinition {
@@ -622,6 +624,7 @@ function parseFields(value: unknown, context: string): ModelFieldDefinition[] {
         name,
         kind,
         required: record['required'] === true,
+        ...(typeof record['title'] === 'string' ? { title: record['title'] } : {}),
         ...(typeof record['repeated'] === 'boolean' ? { repeated: record['repeated'] } : {}),
         ...(Array.isArray(record['options'])
           ? { options: record['options'].filter((o): o is string => typeof o === 'string') }
@@ -633,6 +636,7 @@ function parseFields(value: unknown, context: string): ModelFieldDefinition[] {
           ? { blocks: record['blocks'].filter((o): o is string => typeof o === 'string') }
           : {}),
         ...(typeof record['of'] === 'string' ? { of: record['of'] } : {}),
+        ...(record['deprecated'] === true ? { deprecated: true } : {}),
       },
     ]
   })
@@ -752,6 +756,86 @@ export async function deleteProjectObject(
   key: string,
 ): Promise<boolean> {
   const url = `${options.baseUrl}/objects/${encodeURIComponent(key)}`
+  const raw = await send(url, {
+    method: 'DELETE',
+    key: options.key,
+    ...withFetch(options.fetchImpl),
+  })
+  if (raw.status < 200 || raw.status >= 300) throw apiFailure(url, raw)
+  return asRecord(raw.body)?.['deleted'] === true
+}
+
+/* ── content types (M11) ──────────────────────────────────────────────────── */
+
+export interface ContentTypeInput {
+  readonly key: string
+  readonly title: string
+  readonly titleField: string
+  readonly slugField: string
+  readonly fields: readonly ModelFieldDefinition[]
+}
+
+export interface ContentTypePatchInput {
+  readonly title?: string | undefined
+  readonly titleField?: string | undefined
+  readonly slugField?: string | undefined
+  readonly fields?: readonly ModelFieldDefinition[] | undefined
+}
+
+function requireContentType(body: unknown, what: string): ModelContentTypeDefinition {
+  const root = asRecord(body)
+  const parsed = root === undefined ? undefined : parseContentTypeDefinition(root['type'])
+  if (parsed === undefined) {
+    throw new CliError(`The API returned an unexpected ${what}.`, EXIT.error)
+  }
+  return parsed
+}
+
+export async function createProjectContentType(
+  options: ModelClientOptions,
+  input: ContentTypeInput,
+): Promise<ModelContentTypeDefinition> {
+  const url = `${options.baseUrl}/types`
+  const body = await json(url, {
+    method: 'POST',
+    key: options.key,
+    body: {
+      key: input.key,
+      title: input.title,
+      titleField: input.titleField,
+      slugField: input.slugField,
+      fields: input.fields,
+    },
+    ...withFetch(options.fetchImpl),
+  })
+  return requireContentType(body, 'content type')
+}
+
+export async function updateProjectContentType(
+  options: ModelClientOptions,
+  key: string,
+  patch: ContentTypePatchInput,
+): Promise<ModelContentTypeDefinition> {
+  const url = `${options.baseUrl}/types/${encodeURIComponent(key)}`
+  const body = await json(url, {
+    method: 'PATCH',
+    key: options.key,
+    body: {
+      ...(patch.title === undefined ? {} : { title: patch.title }),
+      ...(patch.titleField === undefined ? {} : { titleField: patch.titleField }),
+      ...(patch.slugField === undefined ? {} : { slugField: patch.slugField }),
+      ...(patch.fields === undefined ? {} : { fields: patch.fields }),
+    },
+    ...withFetch(options.fetchImpl),
+  })
+  return requireContentType(body, 'content type')
+}
+
+export async function deleteProjectContentType(
+  options: ModelClientOptions,
+  key: string,
+): Promise<boolean> {
+  const url = `${options.baseUrl}/types/${encodeURIComponent(key)}`
   const raw = await send(url, {
     method: 'DELETE',
     key: options.key,

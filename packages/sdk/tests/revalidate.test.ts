@@ -197,11 +197,25 @@ describe('tagsToPurge', () => {
     expect(tagsToPurge(PROJECT, {})).toEqual([projectCacheTag(PROJECT)])
   })
 
-  it('ignores a content type this version does not know', () => {
-    expect(tagsToPurge(PROJECT, { typeKeys: ['faq', 'post'] })).toEqual([
+  it('purges a type this VERSION does not know but the project defines', () => {
+    // Until M11 an unrecognised key was dropped. Since a project defines its own
+    // types, dropping means publishing `accommodation` narrows to nothing —
+    // right instinct for a discriminated union, wrong one for a cache tag.
+    expect(tagsToPurge(PROJECT, { typeKeys: ['accommodation', 'post'] })).toEqual([
       projectCacheTag(PROJECT),
+      cacheTag(PROJECT, 'accommodation'),
       cacheTag(PROJECT, 'post'),
     ])
+  })
+
+  it('still refuses a type key that is not shaped like one', () => {
+    // The value arrives in a webhook body. Accepting any string would put an
+    // unbounded value into `revalidateTag` inside the customer's own app.
+    expect(
+      tagsToPurge(PROJECT, {
+        typeKeys: ['ok', '../escape', 'has space', '', 'a'.repeat(200), '9leading'],
+      }),
+    ).toEqual([projectCacheTag(PROJECT), cacheTag(PROJECT, 'ok')])
   })
 
   it('refuses to purge a tag outside this project namespace', () => {

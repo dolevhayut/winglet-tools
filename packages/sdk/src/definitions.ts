@@ -71,16 +71,42 @@ export interface FieldDefinition {
   readonly name: string
   readonly kind: FieldKind
   readonly required: boolean
+  /**
+   * What the studio calls this field, in the customer's language (M11).
+   *
+   * Absent from every seeded definition on purpose — the studio carries Hebrew
+   * names for those already, and these definitions are also read by developers,
+   * where English is right. This is for the fields a PROJECT defines, where the
+   * studio would otherwise show the raw key.
+   */
+  readonly title?: string | undefined
   /** Array-valued field (`tags`, `items`, `images`, `sections`, `gallery`). */
   readonly repeated?: boolean | undefined
   /** `select` only — the closed set of allowed values. */
   readonly options?: readonly string[] | undefined
-  /** `reference` only — which content types may be pointed at. */
-  readonly to?: readonly ContentTypeKey[] | undefined
-  /** `blocks` only — which `_type`s are allowed in the array. */
-  readonly blocks?: readonly BlockKind[] | undefined
+  /**
+   * `reference` only — which content types may be pointed at.
+   *
+   * Widened from the four-key union to `string` in M11: a project defines its
+   * own types now, and a reference restricted to the seeded four would be
+   * useless the moment anyone used the feature.
+   */
+  readonly to?: readonly string[] | undefined
+  /**
+   * `blocks` only — which `_type`s are allowed in the array.
+   *
+   * `string` for the same reason as `to`: a definition read back out of `jsonb`
+   * is only as narrow as whatever wrote it. The union stays closed where it
+   * earns its keep — the discriminated `Block` type a consumer switches on.
+   */
+  readonly blocks?: readonly string[] | undefined
   /** `object` only — the key of the registered object this field carries. */
   readonly of?: string | undefined
+  /**
+   * Retired, but not removed (M11 / PRD-v2 §3.3). Hidden in the studio, still
+   * served by the API, still present on every document that has one.
+   */
+  readonly deprecated?: boolean | undefined
 }
 
 /**
@@ -102,7 +128,12 @@ export const OBJECT_FIELD_KINDS = FIELD_KINDS.filter(
 )
 
 export interface ContentTypeDefinition {
-  readonly key: ContentTypeKey
+  /**
+   * A plain `string` since M11. `ContentTypeKey` still names the four this
+   * package SEEDS and gives named accessors to; a definition read back from a
+   * project may be any key the customer defined.
+   */
+  readonly key: string
   readonly title: string
   readonly titleField: string
   readonly slugField: string
