@@ -136,6 +136,18 @@ export type {
   ObjectDefinition,
 } from './definitions'
 
+/* ── images (M12) ─────────────────────────────────────────────────────────── */
+
+export { IMAGE_FITS, IMAGE_FORMATS, imageProps, imageUrl } from './image'
+export type {
+  ImageFit,
+  ImageFormat,
+  ImageOptions,
+  ImageProps,
+  ImagePropsOptions,
+  ImageUrlOptions,
+} from './image'
+
 /* ── errors ───────────────────────────────────────────────────────────────── */
 
 export {

@@ -53,6 +53,14 @@ export interface ImageRef {
   readonly alt?: string | undefined
   readonly width?: number | undefined
   readonly height?: number | undefined
+  /**
+   * A 20x20 base64 preview generated at upload (M12). Feeds `blurDataURL`, so
+   * the space an image will occupy is filled with a blur of that image rather
+   * than with nothing.
+   */
+  readonly lqip?: string | undefined
+  /** Focal point in 0..1. What keeps a crop off the subject's forehead. */
+  readonly hotspot?: { readonly x: number; readonly y: number } | undefined
 }
 
 /** A `reference` field: a pointer to another document in the same project. */

@@ -46,6 +46,11 @@ export const imageRefObject = z.object({
   alt: z.string().optional(),
   width: z.number().optional(),
   height: z.number().optional(),
+  // M12. Both optional on the read side: an image field written before these
+  // existed has neither, and demanding them would turn old-but-valid content
+  // into a ContentValidationError on the customer's live site.
+  lqip: z.string().optional(),
+  hotspot: z.object({ x: z.number(), y: z.number() }).optional(),
 })
 
 const imageRefSchema: z.ZodType<ImageRef> = imageRefObject
