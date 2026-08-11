@@ -215,6 +215,8 @@ export function buildProgram(io: Io): Command {
     .option('--title <title>', 'human label for the studio (default: the key)')
     .option('--title-field <name>', 'which field titles a row (default: title)')
     .option('--slug-field <name>', 'which field addresses the document (default: slug)')
+    .option('--single', 'exactly one document of this type — a second is refused')
+    .option('--group <heading>', 'the studio sidebar heading to file this type under')
     .option(
       '--field <spec...>',
       'repeatable; name:kind, plus name:object<shape> for a registered object',
@@ -236,6 +238,9 @@ export function buildProgram(io: Io): Command {
     .option('--rename <title>', 'change the human label')
     .option('--title-field <name>', 'which field titles a row')
     .option('--slug-field <name>', 'which field addresses the document')
+    .option('--single', 'make it a singleton — refused if it already holds more than one')
+    .option('--many', 'undo --single; always allowed, it only widens what may be stored')
+    .option('--group <heading>', 'the studio sidebar heading to file this type under')
     .option('--field <spec...>', 'repeatable; the FULL field list, existing fields included', collectSet, [])
     .option('--fields <json>', 'the full field list as a JSON array, or @path to a file')
     .option(CWD_FLAG, CWD_HELP)

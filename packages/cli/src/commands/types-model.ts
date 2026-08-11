@@ -37,12 +37,38 @@ export interface TypeAddOptions extends CommonOptions {
   readonly title?: string | undefined
   readonly titleField?: string | undefined
   readonly slugField?: string | undefined
+  /** M15 — there should be exactly one document of this type. */
+  readonly single?: boolean | undefined
+  /** M15 — the studio sidebar heading this type is filed under. */
+  readonly group?: string | undefined
   readonly field: readonly string[]
   readonly fields?: string | undefined
 }
 
 export interface TypeSetOptions extends TypeAddOptions {
   readonly rename?: string | undefined
+  /**
+   * The way back from `--single`. Commander gives `--no-single` the same
+   * `single` property with a `false` value, so the two flags are one option
+   * here and `undefined` still means "leave it alone" — which is what keeps
+   * `types set --group X` from silently reopening a singleton.
+   */
+  readonly many?: boolean | undefined
+}
+
+/**
+ * `--single` / `--many` → the value the API is asked for, or `undefined` to
+ * leave the stored one untouched. Both flags at once is a contradiction the
+ * operator has to resolve; picking one silently is how a singleton quietly
+ * stops being one.
+ */
+function cardinalityFrom(options: TypeSetOptions): 'single' | 'many' | undefined {
+  if (options.single === true && options.many === true) {
+    throw new CliError('Pass either --single or --many, not both.', EXIT.error)
+  }
+  if (options.single === true) return 'single'
+  if (options.many === true) return 'many'
+  return undefined
 }
 
 export type TypeRmOptions = CommonOptions
@@ -122,8 +148,21 @@ function collectFields(
   return options.field.map(parseTypeFieldSpec)
 }
 
+/**
+ * The human line for one type.
+ *
+ * `[single]` and the group are printed BEFORE the fields, because they are what
+ * an agent needs in order to decide whether `create` is even legal — reading
+ * that a type is a singleton after scrolling past sixty field specs is reading
+ * it too late.
+ */
 function summarise(type: ModelContentTypeDefinition): string {
-  return `${type.key} — ${type.fields.map(formatFieldSpec).join(', ')}`
+  const marks = [
+    ...(type.cardinality === 'single' ? ['single'] : []),
+    ...(type.group === undefined ? [] : [type.group]),
+  ]
+  const prefix = marks.length === 0 ? '' : `[${marks.join(' · ')}] `
+  return `${type.key} — ${prefix}${type.fields.map(formatFieldSpec).join(', ')}`
 }
 
 /* ── list ─────────────────────────────────────────────────────────────────── */
@@ -166,6 +205,8 @@ export async function typeAddCommand(
     title: options.title ?? key,
     titleField: options.titleField ?? 'title',
     slugField: options.slugField ?? 'slug',
+    ...(options.single === true ? { cardinality: 'single' as const } : {}),
+    ...(options.group === undefined ? {} : { group: options.group }),
     fields,
   })
 
@@ -186,12 +227,19 @@ export async function typeSetCommand(
 ): Promise<void> {
   const context = loadProjectContext(io, options)
   const fields = collectFields(context.root, options)
+  const cardinality = cardinalityFrom(options)
 
-  if (fields === undefined && options.rename === undefined) {
+  if (
+    fields === undefined &&
+    options.rename === undefined &&
+    cardinality === undefined &&
+    options.group === undefined
+  ) {
     throw new CliError(
       'Nothing to change.',
       EXIT.error,
-      'Pass --rename <title>, or --field/--fields with the FULL field list.\n' +
+      'Pass --rename <title>, --group <heading>, --single/--many, or\n' +
+        '--field/--fields with the FULL field list.\n' +
         'Changes are additive: existing fields may be reordered but not removed,\n' +
         'retyped, or made required. To retire one, keep it and mark it deprecated.',
     )
@@ -201,6 +249,8 @@ export async function typeSetCommand(
     ...(options.rename === undefined ? {} : { title: options.rename }),
     ...(options.titleField === undefined ? {} : { titleField: options.titleField }),
     ...(options.slugField === undefined ? {} : { slugField: options.slugField }),
+    ...(cardinality === undefined ? {} : { cardinality }),
+    ...(options.group === undefined ? {} : { group: options.group }),
     ...(fields === undefined ? {} : { fields }),
   })
 
@@ -307,6 +357,11 @@ export async function applyTemplate(
       title: type.title,
       titleField: type.titleField,
       slugField: type.slugField,
+      // A template is the main place a singleton is ever declared — an operator
+      // applying `hospitality` should not have to know that three of its eight
+      // types need a second command to stop offering a second home page.
+      ...(type.cardinality === undefined ? {} : { cardinality: type.cardinality }),
+      ...(type.group === undefined ? {} : { group: type.group }),
       fields: type.fields as readonly ModelFieldDefinition[],
     })
     outcome.types.created.push(type.key)

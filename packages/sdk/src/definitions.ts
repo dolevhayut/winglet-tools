@@ -127,6 +127,19 @@ export const OBJECT_FIELD_KINDS = FIELD_KINDS.filter(
   (kind): kind is Exclude<FieldKind, 'object'> => kind !== 'object',
 )
 
+/**
+ * How many documents a content type may hold (M15 / PRD-v2 §6.1).
+ *
+ * `single` is a type there should be exactly one of — `siteSettings`,
+ * `homePage`, `pricePage`. It is not a display preference: the API refuses a
+ * second document of a `single` type, because the studio hiding a button only
+ * protects the person looking at the studio, and the agent is the primary
+ * worker here.
+ */
+export const CARDINALITIES = ['single', 'many'] as const
+
+export type Cardinality = (typeof CARDINALITIES)[number]
+
 export interface ContentTypeDefinition {
   /**
    * A plain `string` since M11. `ContentTypeKey` still names the four this
@@ -137,6 +150,28 @@ export interface ContentTypeDefinition {
   readonly title: string
   readonly titleField: string
   readonly slugField: string
+  /**
+   * Absent means `many` (M15).
+   *
+   * Optional rather than defaulted into every definition so that a row stored
+   * before M15 parses unchanged: no backfill, no migration, and a reader one
+   * deploy behind still understands the whole model. Same reasoning as
+   * `deprecated` on a field.
+   */
+  readonly cardinality?: Cardinality | undefined
+  /**
+   * The studio sidebar heading this type is filed under, in the customer's
+   * language (M15 / PRD-v2 §6.2) — "מתחמי אירוח", "מחירים וכללים", "הגדרות".
+   *
+   * A LABEL ON THE TYPE, NOT A SEPARATE NAVIGATION DOCUMENT. §6.2 draws it as
+   * an array of groups naming their members, which is more expressive and buys
+   * a whole class of bug: a navigation list can name a type that was deleted,
+   * omit one that was added, and disagree with the model in either direction.
+   * Grouping BY a label the type itself carries cannot drift, because there is
+   * only one list. What it gives up is ordering within a group — those come out
+   * in model order — which is the cheaper thing to lose.
+   */
+  readonly group?: string | undefined
   readonly fields: readonly FieldDefinition[]
 }
 

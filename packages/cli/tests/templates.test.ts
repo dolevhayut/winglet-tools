@@ -122,6 +122,38 @@ describe('every template', () => {
     }
   })
 
+  it.each(TEMPLATE_NAMES)('%s: every group heading is Hebrew, or absent', (name) => {
+    // M15 / §6.2 — the group is a SIDEBAR heading, so the same rule the title
+    // obeys applies to it: it is read by a business owner, in Hebrew, and a key
+    // that leaked into one would be jargon in the navigation itself.
+    const template = templateNamed(name)
+    for (const type of template?.types ?? []) {
+      if (type.group === undefined) continue
+      expect(/[֐-׿]/.test(type.group), `${name}/${type.key} group is not Hebrew`).toBe(true)
+      expect(type.group, `${name}/${type.key}`).not.toBe(type.key)
+    }
+  })
+
+  it.each(TEMPLATE_NAMES)('%s: declares a cardinality only from the vocabulary', (name) => {
+    const template = templateNamed(name)
+    for (const type of template?.types ?? []) {
+      if (type.cardinality === undefined) continue
+      expect(['single', 'many'], `${name}/${type.key}`).toContain(type.cardinality)
+    }
+  })
+
+  it.each(TEMPLATE_NAMES)('%s: marks its settings type a singleton', (name) => {
+    /*
+     * Not a style rule. `siteSettings` is the one type in every template that a
+     * project can only sensibly have one of, and it is also the one an owner is
+     * most likely to press "new" on while looking for where the phone number
+     * lives. A template that forgets this ships §5's exact failure scenario.
+     */
+    const settings = templateNamed(name)?.types.find((type) => type.key === 'siteSettings')
+    if (settings === undefined) return
+    expect(settings.cardinality, `${name}/siteSettings`).toBe('single')
+  })
+
   it.each(TEMPLATE_NAMES)('%s: has a Hebrew title on every type', (name) => {
     // §13: the title is what a business owner reads in the studio. A key that
     // leaked into a title is the jargon that rule exists to keep out.
@@ -163,6 +195,50 @@ describe('the hospitality template', () => {
     const accommodation = template?.types.find((type) => type.key === 'accommodation')
     const gallery = accommodation?.fields.find((field) => field.name === 'gallery')
     expect(gallery).toMatchObject({ kind: 'object', repeated: true, of: 'galleryImage' })
+  })
+
+  it('marks exactly the three types the reference site has one of (M15)', () => {
+    // PRD-v2 §5 counts them: `siteSettings`, `homePage`, `pricePage`. Asserting
+    // the whole set rather than each member is what makes this catch the other
+    // direction too — an `accommodation` accidentally marked `single` would give
+    // a guest house one room and no way to add a second.
+    const singles = (template?.types ?? [])
+      .filter((type) => type.cardinality === 'single')
+      .map((type) => type.key)
+      .sort()
+    expect(singles).toEqual(['homePage', 'pricePage', 'siteSettings'])
+  })
+
+  it('groups every type under a heading, so nothing falls through to the default', () => {
+    // The hospitality template is the one measured against a real site, and on
+    // a real site an ungrouped type reads as the section somebody forgot.
+    for (const type of template?.types ?? []) {
+      expect(type.group, `hospitality/${type.key}`).toBeDefined()
+    }
+  })
+
+  it('spells each heading exactly one way', () => {
+    // Two spellings of one heading produce two sidebar groups with the same
+    // name, which reads as a bug and is invisible in review.
+    const headings = new Set((template?.types ?? []).map((type) => type.group))
+    expect([...headings].sort()).toEqual(
+      ['המלצות וסביבה', 'מחירים וכללים', 'פרטי העסק', 'תוכן האתר'].sort(),
+    )
+  })
+
+  it.each(TEMPLATE_NAMES)('%s: no group heading collides with a shell section', (name) => {
+    /*
+     * The studio's four application sections are fixed and always in the sidebar.
+     * A content group sharing one of their names puts two identical labels in one
+     * navigation meaning two different things — which is how the first version of
+     * this shipped: "הגדרות" the settings screen, and "הגדרות" the group holding
+     * the site's phone number.
+     */
+    const SHELL_SECTIONS = ['סקירה', 'תוכן', 'קבצים', 'הגדרות']
+    for (const type of templateNamed(name)?.types ?? []) {
+      if (type.group === undefined) continue
+      expect(SHELL_SECTIONS, `${name}/${type.key} group "${type.group}"`).not.toContain(type.group)
+    }
   })
 })
 

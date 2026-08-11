@@ -612,6 +612,10 @@ export interface ModelObjectDefinition {
 export interface ModelContentTypeDefinition extends ModelObjectDefinition {
   readonly titleField: string
   readonly slugField: string
+  /** M15 — absent means `many`. See `Cardinality` in the SDK's definitions. */
+  readonly cardinality?: 'single' | 'many' | undefined
+  /** M15 — the studio sidebar heading this type is filed under. */
+  readonly group?: string | undefined
 }
 
 export interface ProjectModel {
@@ -677,10 +681,18 @@ function parseContentTypeDefinition(entry: unknown): ModelContentTypeDefinition 
   const record = asRecord(entry) ?? {}
   const titleField = record['titleField']
   const slugField = record['slugField']
+  const cardinality = record['cardinality']
+  const group = record['group']
   return {
     ...base,
     titleField: typeof titleField === 'string' ? titleField : 'title',
     slugField: typeof slugField === 'string' ? slugField : 'slug',
+    // Only `single` is carried through. Anything else — absent, `many`, or a
+    // value a future version invented — reads as the default, so a CLI one
+    // deploy behind never mistakes an unknown cardinality for a restriction it
+    // would then enforce in its own output.
+    ...(cardinality === 'single' ? { cardinality: 'single' as const } : {}),
+    ...(typeof group === 'string' && group.length > 0 ? { group } : {}),
   }
 }
 
@@ -788,6 +800,8 @@ export interface ContentTypeInput {
   readonly title: string
   readonly titleField: string
   readonly slugField: string
+  readonly cardinality?: 'single' | 'many' | undefined
+  readonly group?: string | undefined
   readonly fields: readonly ModelFieldDefinition[]
 }
 
@@ -795,6 +809,8 @@ export interface ContentTypePatchInput {
   readonly title?: string | undefined
   readonly titleField?: string | undefined
   readonly slugField?: string | undefined
+  readonly cardinality?: 'single' | 'many' | undefined
+  readonly group?: string | undefined
   readonly fields?: readonly ModelFieldDefinition[] | undefined
 }
 
@@ -820,6 +836,8 @@ export async function createProjectContentType(
       title: input.title,
       titleField: input.titleField,
       slugField: input.slugField,
+      ...(input.cardinality === undefined ? {} : { cardinality: input.cardinality }),
+      ...(input.group === undefined ? {} : { group: input.group }),
       fields: input.fields,
     },
     ...withFetch(options.fetchImpl),
@@ -840,6 +858,8 @@ export async function updateProjectContentType(
       ...(patch.title === undefined ? {} : { title: patch.title }),
       ...(patch.titleField === undefined ? {} : { titleField: patch.titleField }),
       ...(patch.slugField === undefined ? {} : { slugField: patch.slugField }),
+      ...(patch.cardinality === undefined ? {} : { cardinality: patch.cardinality }),
+      ...(patch.group === undefined ? {} : { group: patch.group }),
       ...(patch.fields === undefined ? {} : { fields: patch.fields }),
     },
     ...withFetch(options.fetchImpl),

@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 import {
   createProjectObject,
   deleteProjectObject,
+  createProjectContentType,
   fetchProjectModel,
   listProjectObjects,
+  updateProjectContentType,
   updateProjectObject,
 } from '../src/api'
 import { isCliError } from '../src/exit'
@@ -223,5 +225,151 @@ describe('deleteProjectObject', () => {
     await expect(
       deleteProjectObject({ baseUrl: BASE, key: WRITE_KEY, fetchImpl }, 'faq'),
     ).rejects.toThrow('still used by')
+  })
+})
+
+/* ── cardinality and group (M15) ──────────────────────────────────────────── */
+
+describe('cardinality and group survive the wire', () => {
+  it('carries `single` and the group through fetchProjectModel', async () => {
+    const fetchImpl = fakeFetch(() => ({
+      status: 200,
+      body: {
+        types: [
+          {
+            key: 'homePage',
+            title: 'עמוד הבית',
+            titleField: 'title',
+            slugField: 'slug',
+            cardinality: 'single',
+            group: 'תוכן האתר',
+            fields: [{ name: 'title', kind: 'string', required: true }],
+          },
+        ],
+        objects: [],
+      },
+    }))
+
+    const model = await fetchProjectModel({ baseUrl: BASE, key: READ_KEY, fetchImpl })
+    expect(model.types[0]).toMatchObject({ cardinality: 'single', group: 'תוכן האתר' })
+  })
+
+  it('reads an UNKNOWN cardinality as the default rather than as a restriction', async () => {
+    /*
+     * The direction of this failure is the whole point. A CLI one deploy behind
+     * the API must not invent a restriction it does not understand: reading some
+     * future `atMostThree` as "single" would make it refuse to print an add
+     * command for a type that accepts twenty. Absence is the only safe misread.
+     */
+    const fetchImpl = fakeFetch(() => ({
+      status: 200,
+      body: {
+        types: [
+          {
+            key: 'accommodation',
+            title: 'מתחם אירוח',
+            titleField: 'title',
+            slugField: 'slug',
+            cardinality: 'atMostThree',
+            fields: [{ name: 'title', kind: 'string', required: true }],
+          },
+        ],
+        objects: [],
+      },
+    }))
+
+    const model = await fetchProjectModel({ baseUrl: BASE, key: READ_KEY, fetchImpl })
+    expect(model.types[0]).not.toHaveProperty('cardinality')
+  })
+
+  it('drops an empty group rather than creating a heading with no name', async () => {
+    const fetchImpl = fakeFetch(() => ({
+      status: 200,
+      body: {
+        types: [
+          {
+            key: 'page',
+            title: 'Page',
+            titleField: 'title',
+            slugField: 'slug',
+            group: '',
+            fields: [{ name: 'title', kind: 'string', required: true }],
+          },
+        ],
+        objects: [],
+      },
+    }))
+
+    const model = await fetchProjectModel({ baseUrl: BASE, key: READ_KEY, fetchImpl })
+    expect(model.types[0]).not.toHaveProperty('group')
+  })
+
+  it('sends both on create, and omits them when not asked for', async () => {
+    const sent: Record<string, unknown>[] = []
+    const fetchImpl = fakeFetch((_url, init) => {
+      sent.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+      return {
+        status: 201,
+        body: {
+          type: {
+            key: 'homePage',
+            title: 'עמוד הבית',
+            titleField: 'title',
+            slugField: 'slug',
+            fields: [{ name: 'title', kind: 'string', required: true }],
+          },
+        },
+      }
+    })
+
+    const client = { baseUrl: BASE, key: WRITE_KEY, fetchImpl }
+    const fields = [{ name: 'title', kind: 'string', required: true }]
+
+    await createProjectContentType(client, {
+      key: 'homePage',
+      title: 'עמוד הבית',
+      titleField: 'title',
+      slugField: 'slug',
+      cardinality: 'single',
+      group: 'תוכן האתר',
+      fields,
+    })
+    await createProjectContentType(client, {
+      key: 'accommodation',
+      title: 'מתחם אירוח',
+      titleField: 'title',
+      slugField: 'slug',
+      fields,
+    })
+
+    expect(sent[0]).toMatchObject({ cardinality: 'single', group: 'תוכן האתר' })
+    // Omitted rather than sent as `many`, so a type created without an opinion
+    // stores no key at all — which is what keeps absence meaningful.
+    expect(sent[1]).not.toHaveProperty('cardinality')
+    expect(sent[1]).not.toHaveProperty('group')
+  })
+
+  it('sends an empty group on patch, which is how one is cleared', async () => {
+    let sent: Record<string, unknown> = {}
+    const fetchImpl = fakeFetch((_url, init) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return {
+        status: 200,
+        body: {
+          type: {
+            key: 'page',
+            title: 'Page',
+            titleField: 'title',
+            slugField: 'slug',
+            fields: [{ name: 'title', kind: 'string', required: true }],
+          },
+        },
+      }
+    })
+
+    await updateProjectContentType({ baseUrl: BASE, key: WRITE_KEY, fetchImpl }, 'page', {
+      group: '',
+    })
+    expect(sent).toHaveProperty('group', '')
   })
 })

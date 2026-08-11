@@ -165,7 +165,7 @@ export function buildServer(config: ServerConfig): McpServer {
     'list_content_types',
     {
       description:
-        "List this project's content types and the reusable object shapes they use, with every field. Read this before creating or updating a document: the model belongs to the project, not to this server's version, so the available types and fields differ between projects.",
+        "List this project's content types and the reusable object shapes they use, with every field. Read this before creating or updating a document: the model belongs to the project, not to this server's version, so the available types and fields differ between projects. A type with \"cardinality\": \"single\" holds exactly one document — update the existing one rather than creating another, because create_document will be refused.",
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
@@ -186,7 +186,7 @@ export function buildServer(config: ServerConfig): McpServer {
     'create_document',
     {
       description:
-        'Create a new document. It starts as a draft and is NOT on the live site until publish is called.',
+        'Create a new document. It starts as a draft and is NOT on the live site until publish is called. Refused for a content type whose cardinality is "single" and which already holds a document — find that one with list_documents and update it instead.',
       inputSchema: z.object({
         type: TYPE_KEY.describe(
           'One of this project\'s content types — see list_content_types.',

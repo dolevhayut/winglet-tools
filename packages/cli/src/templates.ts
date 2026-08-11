@@ -42,6 +42,30 @@ export interface ContentTemplate {
 
 /* ── shared field shorthands ──────────────────────────────────────────────── */
 
+/* ── sidebar groups (M15 / PRD-v2 §6.2) ───────────────────────────────────── */
+
+/**
+ * The headings the studio files these types under.
+ *
+ * IN BUSINESS LANGUAGE, NOT IN OURS. §6.2's whole argument is that a business
+ * owner does not know what a "content type" is but knows exactly what "המחירים
+ * שלי" means. A template is where that translation belongs, because it is the
+ * one place that knows a `stayRule` is a pricing rule rather than an article.
+ *
+ * Constants rather than inline strings so a heading is spelled one way. Two
+ * spellings of the same group produce two groups in the sidebar, which reads as
+ * a bug and is invisible in review.
+ *
+ * NOT "הגדרות", WHICH IS ALREADY TAKEN. The studio's own settings section — API
+ * keys, the plan, the connection — sits in the sidebar under that exact word, so
+ * a content group called the same thing put two identical labels in one
+ * navigation meaning two different things. Caught in a browser, not by a test.
+ * "פרטי העסק" is also the truer name: what `siteSettings` actually holds in
+ * every template is a phone number, an address, a logo and a menu, and §13 does
+ * not want a business owner reading "settings" to change their phone number.
+ */
+const SETTINGS_GROUP = 'פרטי העסק'
+
 const TITLE = { name: 'title', title: 'כותרת', kind: 'string', required: true } as const
 const SLUG = { name: 'slug', title: 'כתובת בעמוד', kind: 'string', required: true } as const
 const SEO = { name: 'seo', title: 'SEO', kind: 'seo', required: false } as const
@@ -112,11 +136,14 @@ const MENU_ITEM: ObjectDefinition = {
  * criterion. It is not a sketch of a guest house; it is the shape a real one
  * turned out to need.
  *
- * `siteSettings`, `homePage` and `pricePage` are singletons in spirit: exactly
- * one of each should exist. Nothing enforces that yet — `cardinality` is M15 —
- * so for now they are ordinary types and the studio will happily offer a second.
- * Recorded here rather than discovered later.
+ * `siteSettings`, `homePage` and `pricePage` are singletons, and since M15 that
+ * is enforced rather than merely intended: the API refuses a second document of
+ * each, and the studio offers no "הוספה" for them.
  */
+const HOSPITALITY_CONTENT = 'תוכן האתר'
+const HOSPITALITY_PRICING = 'מחירים וכללים'
+const HOSPITALITY_SOCIAL = 'המלצות וסביבה'
+
 const HOSPITALITY: ContentTemplate = {
   name: 'hospitality',
   description: 'בית הארחה: מתחמי אירוח, מחירון, כללי שהייה, מבצעים, המלצות',
@@ -127,6 +154,8 @@ const HOSPITALITY: ContentTemplate = {
       title: 'הגדרות האתר',
       titleField: 'title',
       slugField: 'slug',
+      cardinality: 'single',
+      group: SETTINGS_GROUP,
       fields: [
         TITLE,
         SLUG,
@@ -143,6 +172,8 @@ const HOSPITALITY: ContentTemplate = {
       title: 'עמוד הבית',
       titleField: 'title',
       slugField: 'slug',
+      cardinality: 'single',
+      group: HOSPITALITY_CONTENT,
       fields: [
         TITLE,
         SLUG,
@@ -159,6 +190,7 @@ const HOSPITALITY: ContentTemplate = {
       title: 'מתחם אירוח',
       titleField: 'title',
       slugField: 'slug',
+      group: HOSPITALITY_CONTENT,
       fields: [
         TITLE,
         SLUG,
@@ -178,6 +210,8 @@ const HOSPITALITY: ContentTemplate = {
       title: 'מחירון',
       titleField: 'title',
       slugField: 'slug',
+      cardinality: 'single',
+      group: HOSPITALITY_PRICING,
       fields: [
         TITLE,
         SLUG,
@@ -192,6 +226,7 @@ const HOSPITALITY: ContentTemplate = {
       title: 'כלל שהייה',
       titleField: 'title',
       slugField: 'slug',
+      group: HOSPITALITY_PRICING,
       fields: [
         TITLE,
         SLUG,
@@ -206,6 +241,7 @@ const HOSPITALITY: ContentTemplate = {
       title: 'מבצע',
       titleField: 'title',
       slugField: 'slug',
+      group: HOSPITALITY_PRICING,
       fields: [
         TITLE,
         SLUG,
@@ -221,6 +257,7 @@ const HOSPITALITY: ContentTemplate = {
       title: 'המלצה',
       titleField: 'title',
       slugField: 'slug',
+      group: HOSPITALITY_SOCIAL,
       fields: [
         TITLE,
         SLUG,
@@ -235,6 +272,7 @@ const HOSPITALITY: ContentTemplate = {
       title: 'המלצה בסביבה',
       titleField: 'title',
       slugField: 'slug',
+      group: HOSPITALITY_SOCIAL,
       fields: [
         TITLE,
         SLUG,
@@ -251,6 +289,9 @@ const HOSPITALITY: ContentTemplate = {
 
 /* ── clinic ───────────────────────────────────────────────────────────────── */
 
+const CLINIC_TEAM = 'הצוות שלנו'
+const CLINIC_TREATMENTS = 'טיפולים'
+
 const CLINIC: ContentTemplate = {
   name: 'clinic',
   description: 'מרפאה: צוות, טיפולים, שאלות נפוצות, שעות פתיחה',
@@ -261,6 +302,8 @@ const CLINIC: ContentTemplate = {
       title: 'הגדרות האתר',
       titleField: 'title',
       slugField: 'slug',
+      cardinality: 'single',
+      group: SETTINGS_GROUP,
       fields: [
         TITLE,
         SLUG,
@@ -275,6 +318,7 @@ const CLINIC: ContentTemplate = {
       title: 'איש צוות',
       titleField: 'title',
       slugField: 'slug',
+      group: CLINIC_TEAM,
       fields: [
         TITLE,
         SLUG,
@@ -290,6 +334,7 @@ const CLINIC: ContentTemplate = {
       title: 'טיפול',
       titleField: 'title',
       slugField: 'slug',
+      group: CLINIC_TREATMENTS,
       fields: [
         TITLE,
         SLUG,
@@ -306,6 +351,8 @@ const CLINIC: ContentTemplate = {
 
 /* ── restaurant ───────────────────────────────────────────────────────────── */
 
+const RESTAURANT_MENUS = 'תפריטים'
+
 const RESTAURANT: ContentTemplate = {
   name: 'restaurant',
   description: 'מסעדה: תפריטים ומנות, שעות פתיחה, גלריה',
@@ -316,6 +363,8 @@ const RESTAURANT: ContentTemplate = {
       title: 'הגדרות האתר',
       titleField: 'title',
       slugField: 'slug',
+      cardinality: 'single',
+      group: SETTINGS_GROUP,
       fields: [
         TITLE,
         SLUG,
@@ -331,6 +380,7 @@ const RESTAURANT: ContentTemplate = {
       title: 'תפריט',
       titleField: 'title',
       slugField: 'slug',
+      group: RESTAURANT_MENUS,
       fields: [
         TITLE,
         SLUG,
@@ -344,6 +394,7 @@ const RESTAURANT: ContentTemplate = {
       title: 'מנה מוצגת',
       titleField: 'title',
       slugField: 'slug',
+      group: RESTAURANT_MENUS,
       fields: [
         TITLE,
         SLUG,
@@ -368,6 +419,7 @@ const PORTFOLIO: ContentTemplate = {
       title: 'פרויקט',
       titleField: 'title',
       slugField: 'slug',
+      group: 'העבודות שלי',
       fields: [
         TITLE,
         SLUG,
@@ -387,6 +439,7 @@ const PORTFOLIO: ContentTemplate = {
       title: 'שירות',
       titleField: 'title',
       slugField: 'slug',
+      group: 'שירותים',
       fields: [
         TITLE,
         SLUG,
@@ -401,6 +454,7 @@ const PORTFOLIO: ContentTemplate = {
       title: 'המלצה',
       titleField: 'title',
       slugField: 'slug',
+      group: 'המלצות',
       fields: [
         TITLE,
         SLUG,
