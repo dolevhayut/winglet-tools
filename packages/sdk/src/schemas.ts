@@ -83,12 +83,19 @@ export const portableTextSpanObject = z.object({
   _type: z.literal('span'),
   text: z.string(),
   marks: z.array(z.string()).optional(),
+  _key: z.string().optional(),
 })
 
 export const portableTextBlockObject = z.object({
   _type: z.literal('block'),
   style: z.string().optional(),
   children: z.array(portableTextSpanObject),
+  // See the note on `PortableTextBlock.markDefs`: without this, a link survives
+  // as a mark with no destination.
+  markDefs: z.array(z.unknown()).optional(),
+  listItem: z.string().optional(),
+  level: z.number().optional(),
+  _key: z.string().optional(),
 })
 
 const portableTextBlockSchema: z.ZodType<PortableTextBlock> = portableTextBlockObject

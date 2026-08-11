@@ -131,6 +131,22 @@ function apiFailure(url: string, raw: RawResponse): CliError {
 
   const details: string[] = [`${url} → ${String(raw.status)}`]
   if (codeText !== undefined) details.push(`code: ${codeText}`)
+
+  // §9's `issues` name the offending PATH. Without them a validation failure
+  // reads "does not match the content type" and the caller has to guess which
+  // of forty fields it meant — which is exactly what a real migration ran into.
+  const issues = error === undefined ? undefined : error['issues']
+  if (Array.isArray(issues)) {
+    for (const issue of issues.slice(0, 8)) {
+      const record = asRecord(issue)
+      const path = record?.['path']
+      const message = record?.['message']
+      if (typeof path === 'string' && typeof message === 'string') {
+        details.push(`${path}: ${message}`)
+      }
+    }
+    if (issues.length > 8) details.push(`… and ${String(issues.length - 8)} more`)
+  }
   const upgrade = error === undefined ? undefined : error['upgrade_url']
   if (typeof upgrade === 'string') details.push(`upgrade: ${upgrade}`)
 

@@ -15,6 +15,8 @@ import { getCommand } from './commands/get'
 import type { GetOptions } from './commands/get'
 import { initCommand } from './commands/init'
 import type { InitOptions } from './commands/init'
+import { importCommand } from './commands/import'
+import type { ImportOptions } from './commands/import'
 import { linkCommand } from './commands/link'
 import type { LinkOptions } from './commands/link'
 import { listCommand } from './commands/list'
@@ -143,6 +145,7 @@ export function buildProgram(io: Io): Command {
       `  ${CLI_BIN} objects list             the reusable field shapes this project defines`,
       `  ${CLI_BIN} objects add <key>        register one, e.g. --field question:string!`,
       `  ${CLI_BIN} objects set <key>        extend one — additive only`,
+      `  ${CLI_BIN} import <dir> --from sanity   bring a whole site over, images included`,
       '',
       'Editing content:',
       `  ${CLI_BIN} list                    every document, id/type/slug/status`,
@@ -251,6 +254,20 @@ export function buildProgram(io: Io): Command {
     .option('--json', JSON_HELP)
     .action(async (key: string, options: TypeRmOptions) => {
       await typeRmCommand(io, key, options)
+    })
+
+  program
+    .command('import')
+    .argument('<path>', 'the EXTRACTED export directory')
+    .description('bring a site over from another CMS, content and images together')
+    .option('--from <source>', 'which system the export came from (default: sanity)')
+    .option('--dry-run', 'report the model that would be created and change nothing')
+    .option('--titles <json>', 'Hebrew names per type: {"accommodation":"מתחמי אירוח"}, or @path')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (path: string, options: ImportOptions) => {
+      await importCommand(io, path, options)
     })
 
   /**

@@ -92,6 +92,23 @@ export interface PortableTextBlock {
   readonly _type: 'block'
   readonly style?: string | undefined
   readonly children: readonly PortableTextSpan[]
+  /**
+   * Where a link's href actually lives.
+   *
+   * A `mark` on a span is a KEY into this array, not a value — so a schema that
+   * kept `marks` and dropped `markDefs` kept every link's existence and lost
+   * every link's destination. Found while importing a real site, where it would
+   * have silently unlinked the whole body of every page.
+   *
+   * `unknown` because the contents are annotation types the customer defines;
+   * the renderer narrows them.
+   */
+  readonly markDefs?: readonly unknown[] | undefined
+  /** List rendering, which portable text carries on the block. */
+  readonly listItem?: string | undefined
+  readonly level?: number | undefined
+  /** Stable identity for the block, as arrays elsewhere have. */
+  readonly _key?: string | undefined
 }
 
 /** The value of any `richtext` field. */
