@@ -271,7 +271,56 @@ export type AnyDocument = ContentTypeMap[ContentTypeKey]
 
 /* ── query options (§9's list parameters) ─────────────────────────────────── */
 
-export interface ListOptions {
+/**
+ * M13 (PRD-v2 §5) — the comparison operators a filter may use.
+ *
+ * Seven, and no more. §11 rules out a query language of our own, and these cover
+ * what the reference site's own queries actually do. Anything an operator cannot
+ * express is a job for the site's own code, on a list the API already narrowed.
+ */
+export const FILTER_OPERATORS = ['eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'in'] as const
+
+export type FilterOperator = (typeof FILTER_OPERATORS)[number]
+
+/**
+ * One field's conditions: `{ visibility: { ne: 'hidden' } }`, or the shorthand
+ * `{ visibility: 'hidden' }` for equality.
+ *
+ * `in` takes a list; the rest take one value. A `Date` is serialised to ISO —
+ * except that on a `date` field you almost always want the string `'now'`
+ * instead, which the SERVER resolves. That is not a convenience: a timestamp
+ * from the client makes every request a different URL, so a shared cache stores
+ * one copy per visitor and reuses none of them.
+ */
+export type FilterCondition =
+  | string
+  | number
+  | boolean
+  | Date
+  | Partial<Record<Exclude<FilterOperator, 'in'>, string | number | boolean | Date>>
+  | { readonly in: readonly (string | number | boolean)[] }
+
+/**
+ * Envelope fields carry the reserved `_` prefix, which no document field may
+ * use — so `_status` can never collide with a customer's own `status`.
+ */
+export type QueryFilters = Readonly<Record<string, FilterCondition>>
+
+export interface QueryOptions {
+  /** `{ visibility: { ne: 'hidden' }, publishedAt: { lte: 'now' } }` — AND-ed. */
+  readonly filter?: QueryFilters | undefined
+  /** `'order:asc'`, or `['order:asc', 'title:desc']`. Up to three keys. */
+  readonly sort?: string | readonly string[] | undefined
+  /** Return only these keys of `data`. The envelope always comes back. */
+  readonly fields?: readonly string[] | undefined
+  /**
+   * Resolve the references in these fields, depth one. Each reference keeps
+   * `_ref` and gains `_doc`, so a consumer that does not ask sees no change.
+   */
+  readonly expand?: readonly string[] | undefined
+}
+
+export interface ListOptions extends QueryOptions {
   /** 1–100. The API defaults to 20. */
   readonly limit?: number | undefined
   readonly offset?: number | undefined
@@ -281,8 +330,13 @@ export interface ListOptions {
   readonly locale?: string | undefined
 }
 
-/** A single-document read takes the locale but nothing paginated. */
-export interface DocumentOptions {
+/**
+ * A single-document read takes the locale, plus the two shaping options that
+ * mean something for one row. `filter` and `sort` are absent by construction:
+ * the URL already names the document, so there is nothing to narrow or order,
+ * and the API refuses them rather than accepting them and doing nothing.
+ */
+export interface DocumentOptions extends Pick<QueryOptions, 'fields' | 'expand'> {
   readonly locale?: string | undefined
 }
 

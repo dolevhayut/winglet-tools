@@ -880,3 +880,64 @@ export async function deleteProjectContentType(
   if (raw.status < 200 || raw.status >= 300) throw apiFailure(url, raw)
   return asRecord(raw.body)?.['deleted'] === true
 }
+
+/* ── GET /content/:type — M13's shaped read ───────────────────────────────── */
+
+/**
+ * The Content API as the CLI sees it.
+ *
+ * A READ key, not a write key, and that is the point rather than an oversight:
+ * this is the endpoint the customer's SITE calls, so an agent checking whether a
+ * filter does what it thinks should be looking at exactly what a visitor would
+ * get. Using the write key here would show drafts and quietly disagree with the
+ * live page it was supposed to be predicting.
+ *
+ * The shaping parameters are passed through as already-built search pairs. The
+ * CLI does not re-derive the grammar — it is the SDK's `queryParams` output or
+ * a literal the operator typed — because a third implementation of
+ * `filter[f][op]` is a third chance to disagree with the server about it.
+ */
+export interface ContentQueryResult {
+  readonly type: string
+  readonly documents: readonly unknown[]
+  readonly total: number
+  readonly expanded: { readonly resolved: number; readonly truncated: boolean } | undefined
+}
+
+export async function queryContent(
+  baseUrl: string,
+  readKey: string,
+  typeKey: string,
+  search: Readonly<Record<string, string>>,
+  fetchImpl?: typeof fetch,
+): Promise<ContentQueryResult> {
+  const url = new URL(`${baseUrl}/content/${encodeURIComponent(typeKey)}`)
+  for (const [name, value] of Object.entries(search)) url.searchParams.set(name, value)
+
+  const body = await json(url.toString(), {
+    key: readKey,
+    ...(fetchImpl === undefined ? {} : { fetchImpl }),
+  })
+
+  const root = asRecord(body)
+  if (root === undefined) {
+    throw new CliError('The API returned an unexpected content payload.', EXIT.error)
+  }
+
+  const documents = root['documents']
+  const pagination = asRecord(root['pagination']) ?? {}
+  const expanded = asRecord(root['expanded'])
+
+  return {
+    type: requireString(root, 'type', 'content payload'),
+    documents: Array.isArray(documents) ? documents : [],
+    total: optionalNumber(pagination, 'total') ?? 0,
+    expanded:
+      expanded === undefined
+        ? undefined
+        : {
+            resolved: optionalNumber(expanded, 'resolved') ?? 0,
+            truncated: expanded['truncated'] === true,
+          },
+  }
+}

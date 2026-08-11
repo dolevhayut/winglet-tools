@@ -6,6 +6,7 @@ import { CONTENT_TYPE_KEYS, isContentTypeKey } from './definitions'
 import { ApiResponseError } from './errors'
 import type { FetchImplementation, HttpOptions, RequestSpec } from './http'
 import { encodeSegment, requestJson, toValidationError } from './http'
+import { queryParams } from './query'
 import type { AssembledDocument, WireDocument, WireSingle } from './schemas'
 import {
   assembleDocument,
@@ -198,7 +199,11 @@ export function createClient(options: ClientOptions = {}): ContentClient {
   ): Promise<AssembledDocument<K> | null> {
     const spec: RequestSpec = {
       path: `/content/${encodeSegment(typeKey)}/${encodeSegment(slug)}`,
-      search: { status: statusFor(), locale: documentOptions.locale },
+      search: {
+        status: statusFor(),
+        locale: documentOptions.locale,
+        ...queryParams(documentOptions),
+      },
       tags: tags(typeKey),
     }
 
@@ -230,6 +235,11 @@ export function createClient(options: ClientOptions = {}): ContentClient {
         offset: listOptions.offset,
         tag: listOptions.tag,
         locale: listOptions.locale,
+        // M13. Spread last so a shaping key can never be shadowed by one above,
+        // and absent entirely when nothing was asked for — a request that uses
+        // none of M13 produces the same URL, and therefore the same cache entry,
+        // that it did before M13 existed.
+        ...queryParams(listOptions),
       },
       tags: tags(typeKey),
     }
@@ -268,7 +278,11 @@ export function createClient(options: ClientOptions = {}): ContentClient {
   ): Promise<DynamicDocument<TFields> | null> {
     const spec: RequestSpec = {
       path: `/content/${encodeSegment(typeKey)}/${encodeSegment(slug)}`,
-      search: { status: statusFor(), locale: documentOptions.locale },
+      search: {
+        status: statusFor(),
+        locale: documentOptions.locale,
+        ...queryParams(documentOptions),
+      },
       tags: tags(typeKey),
     }
 
@@ -295,6 +309,11 @@ export function createClient(options: ClientOptions = {}): ContentClient {
         offset: listOptions.offset,
         tag: listOptions.tag,
         locale: listOptions.locale,
+        // M13. Spread last so a shaping key can never be shadowed by one above,
+        // and absent entirely when nothing was asked for — a request that uses
+        // none of M13 produces the same URL, and therefore the same cache entry,
+        // that it did before M13 existed.
+        ...queryParams(listOptions),
       },
       tags: tags(typeKey),
     }

@@ -13,6 +13,8 @@ import { editCommand } from './commands/edit'
 import type { EditOptions } from './commands/edit'
 import { getCommand } from './commands/get'
 import type { GetOptions } from './commands/get'
+import { queryCommand } from './commands/query'
+import type { QueryOptions } from './commands/query'
 import { initCommand } from './commands/init'
 import type { InitOptions } from './commands/init'
 import { importCommand } from './commands/import'
@@ -435,6 +437,28 @@ export function buildProgram(io: Io): Command {
     .option('--api-url <url>', API_URL_HELP)
     .action(async (id: string, options: GetOptions) => {
       await getCommand(io, id, options)
+    })
+
+  program
+    .command('query')
+    .argument('<type>', 'the content type, e.g. accommodation')
+    .description('read published content the way the site does — filter, sort, expand (always JSON)')
+    .option(
+      '--filter <spec...>',
+      "repeatable; field=value, or field:op=value — 'visibility:ne=hidden', 'endDate:gte=now'",
+      collectSet,
+      [],
+    )
+    .option('--sort <keys>', "e.g. order:asc, or order:asc,title:desc")
+    .option('--fields <names>', 'comma-separated; return only these keys of the document')
+    .option('--expand <names>', 'comma-separated reference fields to resolve, depth one')
+    .option('--limit <n>', '1–100 (the API defaults to 20)')
+    .option('--offset <n>', 'skip this many')
+    .option('--status <mode>', 'published (default), draft or all — the last two need a preview key')
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .action(async (type: string, options: QueryOptions) => {
+      await queryCommand(io, type, options)
     })
 
   program
