@@ -95,8 +95,27 @@ function quote(value: string): string {
   return `'${value.replace(/'/g, "\\'")}'`
 }
 
+/**
+ * A `reference` is emitted UNNARROWED, and `to` is deliberately not used.
+ *
+ * Narrowing it — `to: ['page']` becoming `Reference<Page>` — was built and taken
+ * back out. `typegen-compiles` asserts the SDK's own `Collection` is assignable
+ * to the generated one, so the SDK's `items` would have to narrow in step; and
+ * it cannot, because its zod schema validates `_doc` as `unknown`. That is not a
+ * gap in the schema but the same honesty `client.get` already documents: this
+ * package does not compile the target's schema and so cannot check its shape.
+ *
+ * Emitting a narrowed type the runtime does not verify would be the worse half
+ * of both — a promise in the editor with nothing behind it. `_doc` is therefore
+ * `unknown` and the consumer narrows, which at least makes the cast visible.
+ */
+
 /** The element type, before `repeated` wraps it in an array. */
-function elementType(field: FieldDefinition, knownObjects: ReadonlySet<string>): string {
+function elementType(
+  field: FieldDefinition,
+  knownObjects: ReadonlySet<string>,
+  knownTypes: ReadonlySet<string> = new Set(),
+): string {
   if (field.kind === 'select') {
     const options = field.options ?? []
     return options.length === 0 ? 'string' : options.map(quote).join(' | ')
@@ -118,14 +137,35 @@ function elementType(field: FieldDefinition, knownObjects: ReadonlySet<string>):
   return SCALARS[field.kind]
 }
 
+/**
+ * Whether `[]` would bind to only part of this type.
+ *
+ * A `|` INSIDE angle brackets does not need parentheses —
+ * `readonly Reference<Page | Post>[]` is already unambiguous, and wrapping it
+ * emits `(Reference<Page | Post>)[]`, which compiles and reads like a mistake.
+ * The old rule tested for any `|` at all, which was correct until M14 gave
+ * `Reference` a type argument that can itself be a union.
+ */
+function hasTopLevelUnion(type: string): boolean {
+  let depth = 0
+  for (let index = 0; index < type.length; index += 1) {
+    const character = type[index]
+    if (character === '<') depth += 1
+    else if (character === '>') depth -= 1
+    else if (character === '|' && depth === 0) return true
+  }
+  return false
+}
+
 export function fieldType(
   field: FieldDefinition,
   knownObjects: ReadonlySet<string> = new Set(),
+  knownTypes: ReadonlySet<string> = new Set(),
 ): string {
-  const element = elementType(field, knownObjects)
+  const element = elementType(field, knownObjects, knownTypes)
   if (field.repeated !== true) return element
   // A union element has to be parenthesised before `[]` binds to it.
-  return element.includes(' | ') ? `readonly (${element})[]` : `readonly ${element}[]`
+  return hasTopLevelUnion(element) ? `readonly (${element})[]` : `readonly ${element}[]`
 }
 
 /**
@@ -150,8 +190,12 @@ export function fieldType(
  * strikes it through and their build stays green — which is exactly the nudge
  * without the breakage.
  */
-function fieldLine(field: FieldDefinition, knownObjects: ReadonlySet<string>): string {
-  const type = fieldType(field, knownObjects)
+function fieldLine(
+  field: FieldDefinition,
+  knownObjects: ReadonlySet<string>,
+  knownTypes: ReadonlySet<string> = new Set(),
+): string {
+  const type = fieldType(field, knownObjects, knownTypes)
   const declaration = field.required
     ? `  readonly ${field.name}: ${type}`
     : `  readonly ${field.name}?: ${type} | undefined`
@@ -209,11 +253,22 @@ function primitives(contentTypeKeys: readonly string[]): string {
     '  readonly height?: number | undefined',
     '}',
     '',
-    '/** A `reference` field: a pointer to another document in this project. */',
-    'export interface Reference {',
+    '/**',
+    ' * A `reference` field: a pointer to another document in this project.',
+    ' *',
+    ' * `_doc` is filled in only when the read asked for it —',
+    " * `{ expand: ['featured'] }`. The reference is never replaced: `_ref` stays",
+    ' * where it was, so a field has one shape whether or not it was expanded.',
+    ' *',
+    ' * `TDoc` is narrowed by the field: a reference declared `to: [...]` gets the',
+    ' * interface it points at, so `_doc.title` is checked rather than guessed.',
+    ' */',
+    'export interface Reference<TDoc = unknown> {',
     "  readonly _type: 'reference'",
     '  readonly _ref: string',
     '  readonly type?: ContentTypeKey | undefined',
+    '  /** Present only after `expand`; absent if the target was not found. */',
+    '  readonly _doc?: TDoc | undefined',
     '}',
     '',
     'export interface SeoFields {',
@@ -309,6 +364,7 @@ function blockSection(blocks: readonly BlockDefinition[], known: ReadonlySet<str
 function contentTypeSection(
   definitions: readonly ContentTypeDefinition[],
   known: ReadonlySet<string>,
+  knownTypes: ReadonlySet<string>,
 ): string {
   const parts: string[] = ['/* content types */', '']
 
@@ -318,7 +374,7 @@ function contentTypeSection(
       interfaceBlock(
         `${name}Fields`,
         '',
-        definition.fields.map((field) => fieldLine(field, known)),
+        definition.fields.map((field) => fieldLine(field, known, knownTypes)),
       ),
       '',
       interfaceBlock(name, `${name}Fields, DocumentMeta<${quote(definition.key)}>`, []),
@@ -335,9 +391,48 @@ function contentTypeSection(
     '',
     'export type AnyDocument = ContentTypeMap[ContentTypeKey]',
     '',
+    augmentation(definitions),
   )
 
   return parts.join('\n')
+}
+
+/**
+ * Teaches the SDK this project's types — M14 / PRD-v2 §6.
+ *
+ * §6 asks for exactly this: "מחבר אותם ל־SDK דרך module augmentation". Without
+ * it the customer passes the interface by hand on every call, and — worse — the
+ * hand-passed argument is unrelated to the key, so `get<Accommodation>('homePage',
+ * slug)` compiles and checks the home page against a cabin's schema. The point of
+ * generating types is that the compiler holds the agent to the schema the agent
+ * chose; a check that can be aimed at the wrong schema does not do that.
+ *
+ * Keyed to the FIELDS interface rather than the document, because
+ * `DynamicDocument` adds the `_id`/`_type`/… envelope itself.
+ *
+ * WHY THIS IS SAFE TO EMIT UNCONDITIONALLY. `ProjectContentTypes` is declared
+ * empty in the SDK, so a project with no generated file has `keyof` = `never`
+ * and every call behaves exactly as it did before M14. Augmenting is additive in
+ * both directions: two projects in one monorepo each augment their own copy of
+ * the module, and TypeScript merges per program.
+ */
+function augmentation(definitions: readonly ContentTypeDefinition[]): string {
+  if (definitions.length === 0) return ''
+
+  const entries = definitions.map(
+    (definition) => `    readonly ${definition.key}: ${typeNameFor(definition.key)}Fields`,
+  )
+
+  return [
+    '/* ── the SDK learns this project’s types ──────────────────────────────── */',
+    '',
+    `declare module ${quote(SDK_PACKAGE)} {`,
+    '  interface ProjectContentTypes {',
+    ...entries,
+    '  }',
+    '}',
+    '',
+  ].join('\n')
 }
 
 /**
@@ -356,7 +451,7 @@ export function generateTypes(input: TypegenInput = DEFAULT_TYPEGEN_INPUT): stri
     primitives(keys),
     objectSection(objects, known),
     blockSection(input.blocks, known),
-    contentTypeSection(input.contentTypes, known),
+    contentTypeSection(input.contentTypes, known, new Set(keys)),
   ]
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')

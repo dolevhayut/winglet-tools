@@ -11,6 +11,7 @@ import type { AssembledDocument, WireDocument, WireSingle } from './schemas'
 import {
   assembleDocument,
   documentSchemas,
+  normaliseExpanded,
   wireAllSchema,
   wireListSchema,
   wireSingleSchema,
@@ -25,6 +26,7 @@ import type {
   Page,
   Post,
   Product,
+  ProjectFields,
 } from './types'
 
 /**
@@ -71,10 +73,18 @@ export interface ContentClient {
    * One document of ANY type the project defines (M11).
    *
    * The four seeded types keep their named accessors above, which stay typed
-   * without a type argument. This is the door for everything else — pass the
-   * interface `types` generated for your project and the result is precise:
+   * without a type argument. This is the door for everything else, and since
+   * M14 it needs no type argument either:
    *
-   *   const room = await client.get<Accommodation>('accommodation', slug)
+   *   const room = await client.get('accommodation', slug)
+   *   //    ^? DynamicDocument<AccommodationFields>
+   *
+   * The key resolves through `ProjectContentTypes`, which the generated types
+   * file augments. That is stronger than passing the interface by hand, which is what
+   * this used to require: a hand-passed argument is unrelated to the key, so
+   * `get<Accommodation>('homePage', slug)` compiled and checked the home page
+   * against a cabin's schema. A project with no generated types file still gets
+   * the open record, exactly as before.
    *
    * Runtime validation for these is the SERVER's: it checks a document against
    * the project's own model on every write, so a shape that reached storage
@@ -82,16 +92,16 @@ export interface ContentClient {
    * compiled in — and pretending otherwise, by validating against nothing,
    * would be worse than being honest about where the check happens.
    */
-  readonly get: <TFields = Readonly<Record<string, unknown>>>(
-    typeKey: string,
+  readonly get: <K extends string, TFields = ProjectFields<K>>(
+    typeKey: K,
     slug: string,
     options?: DocumentOptions,
-  ) => Promise<DynamicDocument<TFields> | null>
+  ) => Promise<DynamicDocument<TFields, K> | null>
   /** The list form of `get`. */
-  readonly list: <TFields = Readonly<Record<string, unknown>>>(
-    typeKey: string,
+  readonly list: <K extends string, TFields = ProjectFields<K>>(
+    typeKey: K,
     options?: ListOptions,
-  ) => Promise<readonly DynamicDocument<TFields>[]>
+  ) => Promise<readonly DynamicDocument<TFields, K>[]>
   /** The whole project in one request — what a static build wants. */
   readonly getAll: () => Promise<BuildPayload>
   /** The tags every read from this client carries. */
@@ -173,7 +183,7 @@ function decode<K extends ContentTypeKey>(
       ? { ...(wire.data as Record<string, unknown>), slug: wire.slug }
       : { slug: wire.slug }
 
-  const parsed = documentSchemas[typeKey].safeParse(payload)
+  const parsed = documentSchemas[typeKey].safeParse(normaliseExpanded(payload))
   if (!parsed.success) throw toValidationError(`${url} (${typeKey}/${wire.slug})`, parsed.error)
   return assembleDocument(typeKey, parsed.data, wire)
 }
@@ -255,27 +265,36 @@ export function createClient(options: ClientOptions = {}): ContentClient {
    * above: it is a column, not a payload field, and only the seeded document
    * happens to carry a copy inside its data.
    */
-  function decodeDynamic<TFields>(wire: WireDocument): DynamicDocument<TFields> {
-    const payload =
+  function decodeDynamic<TFields, K extends string = string>(
+    wire: WireDocument,
+  ): DynamicDocument<TFields, K> {
+    const raw =
       typeof wire.data === 'object' && wire.data !== null
         ? { ...(wire.data as Record<string, unknown>), slug: wire.slug }
         : { slug: wire.slug }
 
+    // M14 — the same flattening the seeded path gets. Without it, `_doc` would
+    // arrive in the wire envelope here and flattened there, for the same field.
+    const payload = normaliseExpanded(raw)
+
     return {
       ...(payload as TFields),
       _id: wire.id,
-      _type: wire.type,
+      // The literal comes from the CALL, the value from the wire. They agree —
+      // the API answers the type it was asked for — and the cast is where that
+      // agreement is asserted rather than proved.
+      _type: wire.type as K,
       _status: wire.status,
       _locale: wire.locale,
       _updatedAt: wire.updated_at,
     }
   }
 
-  async function get<TFields>(
-    typeKey: string,
+  async function get<K extends string, TFields = ProjectFields<K>>(
+    typeKey: K,
     slug: string,
     documentOptions: DocumentOptions = {},
-  ): Promise<DynamicDocument<TFields> | null> {
+  ): Promise<DynamicDocument<TFields, K> | null> {
     const spec: RequestSpec = {
       path: `/content/${encodeSegment(typeKey)}/${encodeSegment(slug)}`,
       search: {
@@ -294,13 +313,13 @@ export function createClient(options: ClientOptions = {}): ContentClient {
       throw error
     }
 
-    return decodeDynamic<TFields>('document' in body ? body.document : body)
+    return decodeDynamic<TFields, K>('document' in body ? body.document : body)
   }
 
-  async function list<TFields>(
-    typeKey: string,
+  async function list<K extends string, TFields = ProjectFields<K>>(
+    typeKey: K,
     listOptions: ListOptions = {},
-  ): Promise<readonly DynamicDocument<TFields>[]> {
+  ): Promise<readonly DynamicDocument<TFields, K>[]> {
     const spec: RequestSpec = {
       path: `/content/${encodeSegment(typeKey)}`,
       search: {
@@ -319,7 +338,7 @@ export function createClient(options: ClientOptions = {}): ContentClient {
     }
 
     const body = await requestJson(resolved.http, spec, wireListSchema)
-    return body.documents.map((wire) => decodeDynamic<TFields>(wire))
+    return body.documents.map((wire) => decodeDynamic<TFields, K>(wire))
   }
 
   async function getAll(): Promise<BuildPayload> {

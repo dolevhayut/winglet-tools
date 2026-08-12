@@ -193,6 +193,13 @@ export type {
   PostFields,
   Product,
   ProductFields,
+  // M14 — the registry the generated types file augments, and the lookup that
+  // reads it. Both have to be EXPORTED, not merely referenced by `client.d.ts`:
+  // a `declare module` block can only merge with an interface the module's
+  // public surface actually names, so without this the augmentation compiled,
+  // resolved, and quietly merged into nothing.
+  ProjectContentTypes,
+  ProjectFields,
   Reference,
   RichText,
   RichtextBlock,

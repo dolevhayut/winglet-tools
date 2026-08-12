@@ -55,10 +55,45 @@ export const imageRefObject = z.object({
 
 const imageRefSchema: z.ZodType<ImageRef> = imageRefObject
 
+/**
+ * The document `expand` resolves a reference into (M13), FLATTENED (M14).
+ *
+ * The API sends the wire envelope — `{ id, type, slug, data, … }` — so `_doc`
+ * would arrive with its fields one level down while the document holding it has
+ * them at the top. A customer would write `home.title` on one line and
+ * `home.featured[0]._doc.data.title` on the next, for two things that are the
+ * same kind of thing. `normaliseExpanded` below flattens it to the shape every
+ * other document this SDK hands back already has.
+ */
+export const expandedDocumentObject = z.object({
+  id: z.string(),
+  type: z.string(),
+  slug: z.string(),
+  status: documentStatusSchema,
+  locale: z.string(),
+  data: z.unknown(),
+  updated_at: z.string(),
+})
+
+/**
+ * `_doc` HAS TO BE DECLARED HERE, or M13's `expand` silently does nothing.
+ *
+ * zod strips keys an object schema does not mention. Every project-defined type
+ * decodes through `z.unknown()` and kept `_doc` by accident; the four SEEDED
+ * types decode through real schemas, so `getCollection('picks', { expand:
+ * ['items'] })` returned the reference with the resolved document quietly
+ * removed — while `client.get('collection', 'picks', …)` returned it in full.
+ * The same request, two answers, and the one that lost data was the one with the
+ * better types.
+ *
+ * Found by M14 while checking that the generated types describe what actually
+ * arrives, which is the entire argument PRD-v2 §6 makes for having them.
+ */
 export const referenceObject = z.object({
   _type: z.literal('reference').default('reference'),
   _ref: z.string(),
   type: contentTypeKeySchema.optional(),
+  _doc: z.unknown().optional(),
 })
 
 const referenceSchema: z.ZodType<Reference> = referenceObject
@@ -341,4 +376,74 @@ export function assembleDocument<K extends ContentTypeKey>(
     _locale: wire.locale,
     _updatedAt: wire.updated_at,
   }
+}
+
+/* ── expanded references (M13, normalised in M14) ─────────────────────────── */
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Flattens the `_doc` the API attaches, into the shape every other document
+ * this SDK returns already has.
+ *
+ * WHY THE SDK DOES THIS AND THE API DOES NOT
+ * -------------------------------------------
+ * The API's job is to serialise rows, and a row is an envelope with a `data`
+ * column — `{ id, slug, data: {...} }`. The SDK's job is to hand the customer
+ * something pleasant to read, which is why `getPage()` has always returned
+ * `{ title, ...,  _id, _type }` rather than the envelope. Expand was the first
+ * place a document arrived somewhere OTHER than the top level, and it kept the
+ * envelope: `home.title` beside `home.featured[0]._doc.data.title`, for two
+ * things that are the same kind of thing.
+ *
+ * WHY THE WALK IS SHALLOW
+ * -----------------------
+ * `expand` only ever attaches `_doc` to a TOP-LEVEL field, or to the elements of
+ * one — that is the whole of its contract, and the API refuses to go deeper.
+ * Walking the entire document would cost every read something in order to find
+ * places `_doc` cannot be.
+ */
+export function normaliseExpanded(data: unknown): unknown {
+  if (!isRecord(data)) return data
+
+  const flatten = (value: unknown): unknown => {
+    if (!isRecord(value) || value['_type'] !== 'reference') return value
+    const doc = value['_doc']
+    if (!isRecord(doc)) return value
+
+    const fields = isRecord(doc['data']) ? doc['data'] : {}
+    return {
+      ...value,
+      _doc: {
+        ...fields,
+        _id: doc['id'],
+        _type: doc['type'],
+        _status: doc['status'],
+        _locale: doc['locale'],
+        _updatedAt: doc['updated_at'],
+      },
+    }
+  }
+
+  let touched = false
+  const out: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(data)) {
+    if (Array.isArray(value)) {
+      const mapped = value.map(flatten)
+      // Reference identity is the cheapest way to know whether anything changed,
+      // and returning the original object when nothing did keeps this off the
+      // hot path for every read that did not expand.
+      if (mapped.some((entry, index) => entry !== value[index])) touched = true
+      out[key] = mapped
+      continue
+    }
+    const mapped = flatten(value)
+    if (mapped !== value) touched = true
+    out[key] = mapped
+  }
+
+  return touched ? out : data
 }

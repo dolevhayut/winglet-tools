@@ -63,11 +63,26 @@ export interface ImageRef {
   readonly hotspot?: { readonly x: number; readonly y: number } | undefined
 }
 
-/** A `reference` field: a pointer to another document in the same project. */
-export interface Reference {
+/**
+ * A `reference` field: a pointer to another document in the same project.
+ *
+ * `_doc` is filled in only when the read asked for it — `{ expand: ['featured'] }`
+ * (M13). The reference itself is never replaced: `_ref` stays exactly where it
+ * was, so a field's shape does not depend on a query parameter and a consumer
+ * that never expands sees what it always saw.
+ *
+ * `TDoc` is `unknown` and the consumer narrows it. Deriving it from the field's
+ * `to` was built and taken back out: the SDK validates `_doc` as `unknown`
+ * because it does not compile the target's schema, and emitting a narrowed type
+ * the runtime never checks is a promise in the editor with nothing behind it.
+ * See the note above `elementType` in `typegen.ts`.
+ */
+export interface Reference<TDoc = unknown> {
   readonly _type: 'reference'
   readonly _ref: string
   readonly type?: ContentTypeKey | undefined
+  /** Present only after `expand`; absent if the target was not found. */
+  readonly _doc?: TDoc | undefined
 }
 
 /** The structured `seo` object every content type but `collection` carries. */
@@ -151,9 +166,19 @@ export type Block = HeroBlock | RichtextBlock | CtaBlock
  * so it gets `string` — the honest answer, and the reason this is a separate
  * interface rather than a loosening of the one above.
  */
-export interface DynamicDocumentMeta {
+export interface DynamicDocumentMeta<TType extends string = string> {
   readonly _id: string
-  readonly _type: string
+  /**
+   * The literal key when the caller named one — M14.
+   *
+   * It was plainly `string` while the type key was only ever a runtime value.
+   * Now that `get`/`list` take the key as a TYPE parameter, `get('homePage', …)`
+   * can say `_type: 'homePage'`, which is what makes the result assignable to
+   * the generated `HomePage` interface. Without it the two describe the same
+   * document and are not interchangeable, and the customer has to cast between
+   * a value the SDK returned and a type the SDK generated.
+   */
+  readonly _type: TType
   readonly _status: DocumentStatus
   readonly _locale: string
   /** ISO-8601, UTC. */
@@ -164,17 +189,58 @@ export interface DynamicDocumentMeta {
  * A document of a type defined by the project rather than compiled into the SDK.
  *
  * The fields default to an open record, because this package genuinely does not
- * know them. Pass the interface the type generator wrote for your project and
- * they become precise:
+ * know them. Once the generated types file has augmented `ProjectContentTypes`
+ * below, the KEY resolves them and no type argument is needed:
  *
- *   const room = await client.get<Accommodation>('accommodation', 'cabin-north')
+ *   const room = await client.get('accommodation', 'cabin-north')
+ *   //    ^? DynamicDocument<AccommodationFields>
  *
  * That is the whole loop: the agent defines the type, `types` generates the
  * interface, and the compiler checks the code against the schema the agent
- * itself chose.
+ * itself chose — against the schema for the key it actually asked for, which a
+ * hand-passed type argument could not guarantee.
  */
-export type DynamicDocument<TFields = Readonly<Record<string, unknown>>> = TFields &
-  DynamicDocumentMeta
+export type DynamicDocument<
+  TFields = Readonly<Record<string, unknown>>,
+  TType extends string = string,
+> = TFields & DynamicDocumentMeta<TType>
+
+/**
+ * The registry a generated types file augments — M14 / PRD-v2 §6.
+ *
+ * Empty here on purpose. This package cannot know what a project defines, so it
+ * ships the hole and the generated types file fills it:
+ *
+ *   declare module '<this package>' {
+ *     interface ProjectContentTypes {
+ *       accommodation: AccommodationFields
+ *     }
+ *   }
+ *
+ * WHAT IT BUYS, BEYOND NOT TYPING A TYPE ARGUMENT
+ * -----------------------------------------------
+ * `client.get<Accommodation>('homePage', slug)` compiles today and is wrong: the
+ * type argument and the key are unrelated, so the compiler happily checks the
+ * home page against a cabin's schema. §6's argument for typegen is that the
+ * agent defines a schema and the compiler then holds it to it — and a check that
+ * can be pointed at the wrong schema does not do that. Tying the two together is
+ * the difference between a type annotation and a guarantee.
+ *
+ * KEYED TO THE *FIELDS* INTERFACE, NOT THE DOCUMENT. `DynamicDocument` adds the
+ * `_id`/`_type`/… envelope itself, so mapping to `Accommodation` — which already
+ * carries it — would intersect the metadata with itself.
+ */
+export interface ProjectContentTypes {}
+
+/**
+ * The fields for a key, or the open record for a key nothing has registered.
+ *
+ * With no augmentation `keyof ProjectContentTypes` is `never`, so this is always
+ * the open record and every existing call behaves exactly as it did.
+ */
+export type ProjectFields<K extends string> = K extends keyof ProjectContentTypes
+  ? ProjectContentTypes[K]
+  : Readonly<Record<string, unknown>>
 
 /* ── registered objects (M10) ─────────────────────────────────────────────── */
 
