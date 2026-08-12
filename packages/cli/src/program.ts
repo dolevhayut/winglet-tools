@@ -490,12 +490,14 @@ export function buildProgram(io: Io): Command {
 
   program
     .command('publish')
-    .argument('<id>', 'the document id, from `list`')
+    .argument('[id]', 'the document id, from `list` — omit it when using --all')
     .description('publish a document — the only command that changes the live site')
+    .option('--all', 'publish every unpublished document; the last step of an import')
+    .option('--type <key>', 'with --all, only documents of this content type')
     .option(CWD_FLAG, CWD_HELP)
     .option('--api-url <url>', API_URL_HELP)
     .option('--json', JSON_HELP)
-    .action(async (id: string, options: PublishOptions) => {
+    .action(async (id: string | undefined, options: PublishOptions) => {
       await publishCommand(io, id, options)
     })
 
