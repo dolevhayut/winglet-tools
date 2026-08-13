@@ -19,6 +19,8 @@ import { initCommand } from './commands/init'
 import type { InitOptions } from './commands/init'
 import { importCommand } from './commands/import'
 import type { ImportOptions } from './commands/import'
+import { lintCommand } from './commands/lint'
+import type { LintOptions } from './commands/lint'
 import { linkCommand } from './commands/link'
 import type { LinkOptions } from './commands/link'
 import { listCommand } from './commands/list'
@@ -60,6 +62,7 @@ import { usageCommand } from './commands/usage'
 import type { UsageOptions } from './commands/usage'
 import { EXIT, toCliError } from './exit'
 import type { ExitCode } from './exit'
+import { CHECK_NAMES } from './lint'
 import { MARK, line } from './io'
 import type { Io } from './io'
 
@@ -155,6 +158,9 @@ export function buildProgram(io: Io): Command {
       `  ${CLI_BIN} create --type --slug    a new draft`,
       `  ${CLI_BIN} edit <id> --set k=v     change fields in the draft`,
       `  ${CLI_BIN} publish <id>            the draft goes live`,
+      '',
+      'Checking what is live:',
+      `  ${CLI_BIN} lint                    contradictions, broken links, images with no description`,
       '',
       `Content is read at build time through ${SDK_PACKAGE}. Exit codes: 0 ok, 1 error,`,
       '2 unsupported environment, 3 limit or network.',
@@ -380,6 +386,22 @@ export function buildProgram(io: Io): Command {
     .option('--json', JSON_HELP)
     .action(async (options: PullOptions) => {
       await pullCommand(io, options)
+    })
+
+  /**
+   * `lint` — M16. Registered beside the reading commands rather than the
+   * editing ones because it is one: it takes the read key, and it is the only
+   * command here that can fail because of what the content SAYS.
+   */
+  program
+    .command('lint')
+    .description('check the published content for contradictions and broken links')
+    .option('--check <name>', `run one check only: ${CHECK_NAMES.join(', ')}`)
+    .option(CWD_FLAG, CWD_HELP)
+    .option('--api-url <url>', API_URL_HELP)
+    .option('--json', JSON_HELP)
+    .action(async (options: LintOptions) => {
+      await lintCommand(io, options)
     })
 
   program
