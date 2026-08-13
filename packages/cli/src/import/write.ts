@@ -138,7 +138,28 @@ function mapValue(value: unknown, context: MapContext): unknown {
     // Portable text passes through whole: it is the format we cloned, `markDefs`
     // and all, and rewriting it would only lose links.
     if (isPortableText(value)) return value
-    return value.map((entry) => mapValue(entry, context))
+
+    /*
+     * A DROPPED ENTRY LEAVES THE ARRAY, IT DOES NOT LEAVE A HOLE.
+     *
+     * `mapValue` returns `null` for an image it could not resolve — one missing
+     * from the export, or one the upload refused. Keeping that `null` in place
+     * put it where the model declares an object, so validation rejected the
+     * WHOLE document: two unusable images out of eighty-two cost the entire
+     * `accommodation/cabins` page, which is one of the two the site is about.
+     *
+     * Measured on a cloud import, where two files exceeded the platform's
+     * request-body ceiling. Locally both uploaded and the hole never appeared —
+     * the same export, a different result, decided by an upload limit three
+     * layers away from this line.
+     *
+     * Dropping the element is right rather than merciful: the reference is gone
+     * either way, and the note already told the operator which image it was.
+     * The choice is only whether ONE picture is missing or the page is.
+     */
+    return value
+      .map((entry) => mapValue(entry, context))
+      .filter((entry) => entry !== null)
   }
 
   if (isSlug(value)) return value.current
