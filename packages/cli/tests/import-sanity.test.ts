@@ -111,11 +111,55 @@ describe('inference', () => {
     expect(model.types[0]?.fields.map((f) => f.name)).not.toContain('_system')
   })
 
-  it('degrades a shape too deep for a flat object, and says so', () => {
+  /*
+   * THE PRICE LIST. This assertion used to read "degrades a shape too deep for a
+   * flat object, and says so", and it was the honest description of a real
+   * limitation: `groups[] → rows[]` is two levels, objects were flat, so the
+   * whole field became `custom` — stored faithfully, rendered nowhere. The owner
+   * of the site this product is measured against could not edit their own
+   * prices, which is the one thing `.north-star.md` promises by name.
+   *
+   * M18 lifted the flat rule. The shape is modelled now.
+   */
+  it('MODELS a two-level shape — the price list, which used to degrade', () => {
     const model = inferModel([
-      doc('pricePage', { groups: [{ _type: 'g', rows: [{ label: 'a', price: 1 }] }] }),
+      doc('pricePage', { groups: [{ _type: 'priceGroup', rows: [{ label: 'a', price: 1 }] }] }),
     ])
-    expect(model.types[0]?.fields.find((f) => f.name === 'groups')?.kind).toBe('custom')
+
+    const groups = model.types[0]?.fields.find((f) => f.name === 'groups')
+    expect(groups?.kind).toBe('object')
+    expect(groups?.repeated).toBe(true)
+    expect(groups?.of).toBe('priceGroup')
+
+    // And the inner shape is registered in its own right, with its own fields.
+    const group = model.objects.find((o) => o.key === 'priceGroup')
+    const rows = group?.fields.find((f) => f.name === 'rows')
+    expect(rows?.kind).toBe('object')
+    expect(rows?.repeated).toBe(true)
+
+    const row = model.objects.find((o) => o.key === rows?.of)
+    expect(row?.fields.map((f) => f.name).sort()).toEqual(['label', 'price'])
+  })
+
+  it('registers a child BEFORE its parent, so the writer can replay in order', () => {
+    // The API refuses an object whose field points at a shape that does not
+    // exist yet, so insertion order is not cosmetic — it is what keeps a
+    // migration from failing halfway through.
+    const model = inferModel([
+      doc('pricePage', { groups: [{ _type: 'priceGroup', rows: [{ label: 'a', price: 1 }] }] }),
+    ])
+    const keys = model.objects.map((o) => o.key)
+    expect(keys.indexOf('priceRow')).toBeLessThan(keys.indexOf('priceGroup'))
+  })
+
+  it('still degrades a shape past the depth cap, and still says so', () => {
+    // Four levels of object. The cap is the API's; writing past it would turn a
+    // migration into a 422 halfway through, so the importer stops first.
+    const model = inferModel([
+      doc('deepPage', {
+        a: [{ _type: 'lvlA', b: [{ _type: 'lvlB', c: [{ _type: 'lvlC', d: [{ _type: 'lvlD', x: 'y' }] }] }] }],
+      }),
+    ])
     expect(model.notes.some((note) => note.kind === 'flattened')).toBe(true)
   })
 

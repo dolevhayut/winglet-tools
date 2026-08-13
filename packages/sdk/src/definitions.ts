@@ -112,9 +112,10 @@ export interface FieldDefinition {
 /**
  * A reusable field shape, registered once per project and referenced by key.
  *
- * Flat by rule: an object's own fields may not be of kind `object`. The key is
- * a plain `string`, not a union — the registry is customer data, and a closed
- * list of object keys would be the very defect M10 exists to remove.
+ * Nesting is allowed since M18, bounded by `MAX_OBJECT_DEPTH` and refused when
+ * cyclic. The key is a plain `string`, not a union — the registry is customer
+ * data, and a closed list of object keys would be the very defect M10 exists to
+ * remove.
  */
 export interface ObjectDefinition {
   readonly key: string
@@ -122,10 +123,22 @@ export interface ObjectDefinition {
   readonly fields: readonly FieldDefinition[]
 }
 
-/** Kinds an object's own field may take — everything except `object` itself. */
-export const OBJECT_FIELD_KINDS = FIELD_KINDS.filter(
-  (kind): kind is Exclude<FieldKind, 'object'> => kind !== 'object',
-)
+/**
+ * Kinds an object's own field may take — M18: all of them, `object` included.
+ *
+ * M10 made objects flat and said lifting it later would be additive. What forced
+ * it: the reference site's price list is `groups[] → rows[]`, two levels, so a
+ * flat registry could only hold it as `custom` — served by the API, with no
+ * control in the studio. The owner could not edit their own prices.
+ *
+ * The costs M10 avoided are paid in the API's `model.ts`, not here: a cycle is
+ * refused at write time and depth is capped, so every registry a reader sees is
+ * a bounded acyclic graph and can be walked without a visited-set.
+ */
+export const OBJECT_FIELD_KINDS = FIELD_KINDS
+
+/** How deep a chain of object references may run. Mirrors the API's constant. */
+export const MAX_OBJECT_DEPTH = 3
 
 /**
  * How many documents a content type may hold (M15 / PRD-v2 §6.1).

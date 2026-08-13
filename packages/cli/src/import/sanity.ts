@@ -1,6 +1,7 @@
 import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { MAX_OBJECT_DEPTH } from '../../../sdk/src/definitions'
 import type { ModelFieldDefinition, ModelObjectDefinition } from '../api'
 import { CliError, EXIT } from '../exit'
 
@@ -357,18 +358,37 @@ function camel(value: string): string {
   return `${p.charAt(0).toLowerCase()}${p.slice(1)}`
 }
 
+/** What the recursive inference needs to register shapes it discovers on the way. */
+interface NestContext {
+  readonly objects: Map<string, ModelObjectDefinition>
+  readonly shapesByObject: Map<string, Record<string, unknown>[]>
+  readonly notes: ImportNote[]
+  /** How many object levels are already above this one. */
+  readonly depth: number
+}
+
 /**
  * Turns the observed shapes of an object into a registered object definition.
  *
- * Returns `null` when the shape is too deep for this system's flat objects — an
- * object whose own field is another object. The caller degrades that field to
- * `custom`, which stores it faithfully and renders it nowhere, and writes a
- * note. Losing the structure is a real cost; losing the CONTENT would not be
- * acceptable, and this trade keeps every byte.
+ * RECURSIVE SINCE M18. It used to return `null` the moment a sub-field was
+ * itself an object, because objects were flat — and the caller degraded the
+ * whole field to `custom`, which stored every byte and rendered nothing. On the
+ * reference site that was the PRICE LIST: `groups[] → rows[]`, two levels, so
+ * the owner could not edit their own prices in the studio at all.
+ *
+ * Now a nested shape is registered as its own object and referenced, deepest
+ * first — the recursion writes a child into `objects` before its parent, so the
+ * insertion order the writer replays is already a valid dependency order and
+ * the API never sees a type pointing at a shape that does not exist yet.
+ *
+ * `null` still means "cannot be modelled", and the caller still degrades to
+ * `custom`. What changed is how rarely that happens: only past `MAX_OBJECT_DEPTH`
+ * or on a shape with no observable fields.
  */
 function toObjectDefinition(
   key: string,
   shapes: readonly Record<string, unknown>[],
+  context: NestContext,
 ): ModelObjectDefinition | null {
   const observations = new Map<string, Observation>()
 
@@ -381,10 +401,9 @@ function toObjectDefinition(
     for (const field of contentKeys(shape)) {
       const seen = observe(shape[field])
       if (seen === null) continue
-      // Nested structure: our objects are flat by rule (M10).
-      if (seen.kind === 'object' || seen.kind === 'objectList' || seen.kind === 'custom') {
-        return null
-      }
+      // `custom` is genuinely unmodellable — an array of mixed scalars, say —
+      // and stays the escape hatch it always was.
+      if (seen.kind === 'custom') continue
       const existing = observations.get(field)
       observations.set(field, existing === undefined ? seen : merge(existing, seen))
     }
@@ -392,12 +411,64 @@ function toObjectDefinition(
 
   if (observations.size === 0) return null
 
-  const fields: ModelFieldDefinition[] = [...observations.entries()].map(([name, seen]) => ({
-    name,
-    kind: seen.kind === 'slug' ? 'string' : seen.kind,
-    required: false,
-    ...(seen.kind === 'stringList' ? { repeated: true } : {}),
-  }))
+  const fields: ModelFieldDefinition[] = []
+
+  for (const [name, seen] of observations) {
+    if (seen.kind !== 'object' && seen.kind !== 'objectList') {
+      fields.push({
+        name,
+        kind: seen.kind === 'slug' ? 'string' : seen.kind,
+        required: false,
+        ...(seen.kind === 'stringList' ? { repeated: true } : {}),
+      })
+      continue
+    }
+
+    /*
+     * One level deeper. The cap is the API's, restated rather than guessed at:
+     * writing a definition it would refuse turns a migration into a failure
+     * halfway through, and the note below is a far better outcome than a 422.
+     */
+    if (context.depth + 1 >= MAX_OBJECT_DEPTH) {
+      fields.push({ name, kind: 'custom', required: false })
+      context.notes.push({
+        kind: 'flattened',
+        where: `${key}.${name}`,
+        detail:
+          `Nested deeper than ${String(MAX_OBJECT_DEPTH)} levels, so it is stored whole and ` +
+          'is not editable field by field in the studio. No content was lost.',
+      })
+      continue
+    }
+
+    const nestedKey = seen.name !== null ? camel(seen.name) : camel(`${key} ${name}`)
+    const nestedShapes = context.shapesByObject.get(nestedKey) ?? seen.shape
+    const already = context.objects.get(nestedKey)
+    const nested =
+      already ??
+      toObjectDefinition(nestedKey, nestedShapes, { ...context, depth: context.depth + 1 })
+
+    if (nested === null) {
+      fields.push({ name, kind: 'custom', required: false })
+      context.notes.push({
+        kind: 'flattened',
+        where: `${key}.${name}`,
+        detail: 'This shape could not be modelled, so it is stored whole. No content was lost.',
+      })
+      continue
+    }
+
+    // Child before parent: the writer replays this map in insertion order.
+    if (already === undefined) context.objects.set(nestedKey, nested)
+
+    fields.push({
+      name,
+      kind: 'object',
+      of: nestedKey,
+      required: false,
+      ...(seen.kind === 'objectList' ? { repeated: true } : {}),
+    })
+  }
 
   return { key, title: key, fields }
 }
@@ -499,16 +570,16 @@ export function inferModel(documents: readonly SanityDocument[]): InferredModel 
         // document that had it.
         const allShapes = shapesByObject.get(objectKey) ?? seen.shape
         const existing = objects.get(objectKey)
-        const definition = existing ?? toObjectDefinition(objectKey, allShapes)
+        const definition =
+          existing ??
+          toObjectDefinition(objectKey, allShapes, { objects, shapesByObject, notes, depth: 0 })
 
         if (definition === null) {
           fields.push({ name, kind: 'custom', required: false })
           notes.push({
             kind: 'flattened',
             where: `${typeKey}.${name}`,
-            detail:
-              'Nested deeper than a flat object allows, so it is stored whole and ' +
-              'is not editable field by field in the studio. No content was lost.',
+            detail: 'This shape could not be modelled, so it is stored whole. No content was lost.',
           })
           continue
         }

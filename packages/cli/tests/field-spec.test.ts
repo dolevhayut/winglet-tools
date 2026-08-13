@@ -71,10 +71,37 @@ describe('parseFieldSpec', () => {
     expect(parseFieldSpec('  price:number!  ').name).toBe('price')
   })
 
-  it('rejects a nested object, naming the flat rule', () => {
-    // The one kind a registered object may not contain. Enforced in the parser
-    // as well as on the server so the failure arrives before a round trip.
-    expect(rejection('gallery:object')).toContain('not a field kind')
+  /*
+   * M18 — an object may now contain an object, so this stopped being about the
+   * flat rule and became about the SHAPE being named. A bare `object` is still
+   * refused, and it has to be: a field of kind object with no `of` is a field
+   * nothing can render, validate or generate a type for.
+   */
+  it('rejects a bare object, because it names no shape', () => {
+    expect(rejection('gallery:object')).toContain('which shape it carries')
+  })
+
+  it('parses a nested object field, list and single', () => {
+    expect(parseFieldSpec('rows:object<priceRow>[]')).toEqual({
+      name: 'rows',
+      kind: 'object',
+      of: 'priceRow',
+      required: false,
+      repeated: true,
+    })
+    expect(parseFieldSpec('seo:object<seo>!')).toEqual({
+      name: 'seo',
+      kind: 'object',
+      of: 'seo',
+      required: true,
+    })
+  })
+
+  it('round-trips through formatFieldSpec, so `objects list` output is reusable', () => {
+    // What an agent reads back must be what it can pass straight in — that is
+    // the whole reason the notation is shared between the two commands.
+    const spec = 'rows:object<priceRow>[]'
+    expect(formatFieldSpec(parseFieldSpec(spec))).toBe(spec)
   })
 
   it('rejects an unknown kind and lists the real ones', () => {
