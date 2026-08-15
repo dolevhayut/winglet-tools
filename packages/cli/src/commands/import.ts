@@ -6,6 +6,7 @@ import { readJsonValue } from '../data-input'
 import { CliError, EXIT } from '../exit'
 import { inferModel, readSanityExport } from '../import/sanity'
 import type { ImportNote } from '../import/sanity'
+import { uploadAsset } from '../import/upload'
 import { runImport } from '../import/write'
 import { pluralise } from '../format'
 import { MARK, line } from '../io'
@@ -106,29 +107,20 @@ async function uploadImage(
     })
   }
 
-  const form = new FormData()
-  form.set('file', new Blob([bytes], { type: mimeFor(name) }), name)
-  if (alt.length > 0) form.set('alt', alt)
-
-  const response = await fetch(`${context.apiBaseUrl}/assets/upload`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${writeKey}` },
-    body: form,
-  })
-
-  const body: unknown = await response.json().catch(() => undefined)
-  if (!response.ok) {
-    const message =
-      typeof body === 'object' && body !== null && 'error' in body
-        ? String((body as { error: { message?: string } }).error.message ?? response.status)
-        : `HTTP ${String(response.status)}`
-    notes.push({ kind: 'dropped', where: filename, detail: message })
+  try {
+    const uploaded = await uploadAsset(
+      { apiBaseUrl: context.apiBaseUrl, writeKey },
+      { bytes, filename: name, alt },
+    )
+    return { id: uploaded.id, bytes: uploaded.bytes }
+  } catch (error: unknown) {
+    notes.push({
+      kind: 'dropped',
+      where: filename,
+      detail: error instanceof Error ? error.message : String(error),
+    })
     return null
   }
-
-  const asset = (body as { asset?: { id?: string; bytes?: number } } | undefined)?.asset
-  if (asset?.id === undefined) return null
-  return { id: asset.id, bytes: asset.bytes ?? bytes.byteLength }
 }
 
 /**
@@ -154,13 +146,6 @@ async function downscale(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<Arr
   } catch {
     return null
   }
-}
-
-function mimeFor(filename: string): string {
-  if (/\.png$/i.test(filename)) return 'image/png'
-  if (/\.webp$/i.test(filename)) return 'image/webp'
-  if (/\.gif$/i.test(filename)) return 'image/gif'
-  return 'image/jpeg'
 }
 
 /** Reads `--titles`, which may be inline JSON or `@path`. */
