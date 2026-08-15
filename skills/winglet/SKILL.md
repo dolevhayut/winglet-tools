@@ -192,11 +192,24 @@ Reads are cached with `force-cache` and tagged, so a published change
 invalidates exactly them. `init` mounts a revalidate route in the app; the
 publish webhook calls it.
 
-Content is fetched at **build time**, not per request. The site keeps serving
-whatever it last built even if the CMS is unreachable. Do not convert reads to
-runtime fetches to "keep them fresh" — that trades the site's independence for
-nothing. If content looks stale in development, Next's fetch cache is
-persistent: clear `.next` before assuming the CMS is wrong.
+**Be precise about what that does and does not buy**, because it is easy to
+overstate. The cache means the site does not call us on every visit. It does
+**not** mean the site is independent of us: a cache entry is per-deployment and
+evictable, the publish webhook empties it on purpose, and on a miss with the API
+unreachable the SDK throws `TransportError` rather than degrading — only
+`PROJECT_NOT_FOUND` is swallowed to `null`. A page that misses the cache while
+we are down is an error page.
+
+So: prefer static rendering, and do not reach for `export const dynamic =
+'force-dynamic'` to "keep content fresh". Publishing already refreshes it, and
+force-dynamic gives up the cache that keeps visitors off our servers.
+
+A site that must not depend on us at all is a different build: `winglet pull`
+brings the content down to local JSON and you build from that. It brings the
+documents, not the images.
+
+If content looks stale in development, Next's fetch cache is persistent: clear
+`.next` before assuming the CMS is wrong.
 
 ## Editing content as an agent
 
