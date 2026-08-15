@@ -45,8 +45,12 @@ Facts that matter when you explain it:
 
 - Ownership genuinely transfers, and the token is **destroyed** on use — the
   link cannot be reused to get back into their site afterwards.
-- Until it is claimed, the project **cannot upload images** and expires after
-  14 days. An unclaimed project is a trial, not a site.
+- **The link is valid for 14 days, and there is no way to issue another.** It is
+  written once at creation and nulled on use; no endpoint reissues it. After 14
+  days the project can never be claimed, and nothing deletes it — it simply
+  stays unclaimable. Hand the link over in the session that created it.
+- Until it is claimed, the project **cannot upload images** and is capped at 25
+  documents. An unclaimed project is a trial, not a site.
 - The free plan is one site. A second one is refused with an upgrade link, and
   the refusal **does not consume the claim link** — they can upgrade and claim
   afterwards.
