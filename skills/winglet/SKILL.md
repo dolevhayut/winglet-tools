@@ -1,6 +1,6 @@
 ---
 name: winglet
-description: Move hard-coded text out of a Next.js site and into a CMS the site owner can edit themselves, so changing a sentence never costs another agent run. Use when a Next.js App Router project has copy, prices, hours or contact details written directly in JSX, when the user says the client keeps asking them for text changes, or when they ask for a CMS, content management, or an editable site.
+description: Move hard-coded text out of a Next.js site and into a CMS the site owner can edit themselves, so changing a sentence never costs another agent run. Use when a Next.js App Router project has copy, prices, hours or contact details written directly in JSX, when the user says the client keeps asking them for text changes, when they ask for a CMS, content management, or an editable site, or when they want an existing site's content moved into one.
 ---
 
 # Content for a site you built
@@ -21,8 +21,8 @@ inventory). This holds editorial content, not application state.
 ## What you get
 
 One command creates a live content project with no signup, no browser and no
-credit card. It writes `.env.local`, generates types, seeds four content types,
-and prints one link the owner clicks to start editing.
+credit card. It writes `.env.local`, generates types, seeds a starting content
+model, and prints one link the owner clicks to take ownership.
 
 ```bash
 npx winglet init
@@ -32,100 +32,209 @@ Exit codes: `0` ok · `1` error · `2` not a Next.js App Router project · `3`
 rate-limited or network. There are **no interactive prompts** — every option is
 a flag, so it is safe to run unattended.
 
-## The four content types
+## The claim link is the point of the whole first run
 
-Fixed in v1. Do not try to invent new ones; put anything extra under `custom`.
+`init` prints a link. **Give it to the human, and say what it does.** It is not
+an afterthought and not a warning — it is the entire onboarding:
 
-| Type | Fields |
-|---|---|
-| `page` | `title`, `slug`, `sections` (blocks), `seo`, `custom` |
-| `post` | `title`, `slug`, `excerpt`, `body` (richtext), `cover`, `publishedAt`, `tags`, `seo`, `custom` |
-| `product` | `title`, `slug`, `description` (richtext), `price` (number), `currency`, `images`, `inStock`, `seo`, `custom` |
-| `collection` | `title`, `slug`, `items` (references), `description`, `custom` |
+> The project you just created has no owner. Whoever opens that link becomes the
+> owner: they get an account, the project transfers to it, and from then on they
+> edit their own content in the browser without you.
 
-`custom` is a plain object and it is the right home for anything the schema does
-not cover — `hours`, `phone`, `weight`, an image path. Reaching for it is normal,
-not a workaround.
+Facts that matter when you explain it:
 
-## Migrating an existing page
+- Ownership genuinely transfers, and the token is **destroyed** on use — the
+  link cannot be reused to get back into their site afterwards.
+- Until it is claimed, the project **cannot upload images** and expires after
+  14 days. An unclaimed project is a trial, not a site.
+- The free plan is one site. A second one is refused with an upgrade link, and
+  the refusal **does not consume the claim link** — they can upgrade and claim
+  afterwards.
+- You cannot reprint the link from the server: it is stored there only as a
+  hash, deliberately. It lives in the terminal that ran `init` and in the local
+  config. `winglet claim` reprints it from there.
 
-Work one page at a time and keep the site building between steps.
+If you finish a session without handing over that link, nothing you built is
+usable by the person who asked for it.
 
-1. **Read the page and list every string a human might want to change.** A
-   headline is content. A CSS class is not. An `aria-label` usually is not.
-2. **Pick the type.** A marketing page is a `page`. A shop item is a `product`.
-   An article is a `post`.
-3. **Create the document** with the real current copy, so nothing changes
-   visually on the first pass.
-4. **Replace the literals with a typed read:**
+## The content model is defined per project — including by you
 
-```tsx
-import { getPage } from '@winglet/next'
+`init` seeds four types (`page`, `post`, `product`, `collection`) and two shared
+shapes (`faq`, `galleryImage`). **These are a starting point, not a limit.**
+Types, fields and shapes are project data, created at runtime, with no migration
+and no deploy.
 
-export default async function Home() {
-  const home = await getPage('home')
-  return <h1>{home?.title ?? ''}</h1>
-}
+### Start from a template, not from an empty project
+
+```bash
+npx winglet templates list                 # what each one defines
+npx winglet templates apply hospitality    # adds its types and objects
 ```
 
-5. **Build.** The generated types are strict — if `sections` is optional, handle
-   it. A compile error here is the types doing their job.
-6. **Tell the owner the link.** `init` printed one. Nothing you built matters if
-   they never open it.
+| Template | For |
+|---|---|
+| `hospitality` | guest houses: accommodations, price list, stay rules, promotions, testimonials, area guides |
+| `clinic` | practitioners, treatments, opening hours |
+| `restaurant` | menus, dishes, opening hours |
+| `portfolio` | projects, services, testimonials |
+
+Do this **before** inventing types by hand. A template is a model somebody
+thought about and validated against a real site; an empty project gets whatever
+you guessed at 2am. Templates only add what is missing, so applying one over a
+seeded project is safe.
+
+`init --template <name>` does it in the same run.
+
+### Defining types yourself
+
+```bash
+npx winglet types list                     # what this project defines, as JSON
+npx winglet types add                      # define a content type
+npx winglet types set                      # extend one
+npx winglet objects list                   # reusable field shapes
+npx winglet objects add                    # register one
+```
+
+Read `types list` before writing anything. It is the project's real model and it
+is the only authority — do not assume the seeded four.
+
+**Changes are additive only, and that is a hard rule, not a convention.** A
+field can be added; nothing can be removed or retyped. Retire a field by marking
+it `deprecated`. `types rm` is refused while documents of that type exist, and
+`objects rm` is refused while any type still points at the shape. This is what
+makes it safe for you to extend a model the owner is already using.
+
+`object` fields point at a shared shape, which is how a price row, an FAQ entry
+or a gallery image is defined once and reused. Objects may contain objects.
+
+After any model change, regenerate the types file:
+
+```bash
+npx winglet types
+```
+
+`custom` is still there and still fine for genuinely one-off values. But if the
+owner will edit it, or there is more than one of it, it wants a real field — a
+`custom` blob shows up in the studio as far less than a typed field does.
+
+## Moving an existing site's content in
+
+Two paths, and they are not the same job.
+
+**From another CMS** — one command, content and images together:
+
+```bash
+npx winglet import ./export --from sanity --dry-run
+npx winglet import ./export --from sanity --titles @titles.json
+```
+
+The model is inferred from the documents, because a schema lives in the other
+CMS's own repo and the people leaving it do not have that repo. The one thing
+data cannot carry is a **type's human-readable name** — `--titles` supplies it,
+and the report lists every type still wearing its key.
+
+**From a live website** — that one is yours to read, not ours to scrape. The
+order matters:
+
+1. `winglet templates apply <closest match>` — get a real model first.
+2. Read the site and map its content onto that model. Extend with `types set`
+   where the site genuinely needs a field the template lacks.
+3. `winglet create` each document, then `winglet publish`.
+4. Hand over the claim link.
+
+Do **not** derive a content model from HTML structure. Pages describe layout;
+types describe meaning, and the two are not the same shape. A model invented
+from markup is the one thing here that cannot be undone cheaply, because
+removing a type is refused once documents exist.
 
 ## Reading content
 
 Server components only. The key is server-side and must never reach the browser.
+
+The four seeded types have named accessors:
 
 ```ts
 import { getPage, getPost, getPosts, getProduct, getProducts, getAll } from '@winglet/next'
 
 const home     = await getPage('home')          // one document, or null
 const posts    = await getPosts({ limit: 10, tag: 'ai' })
-const products = await getProducts()
 const payload  = await getAll()                 // everything, for a static build
 ```
 
-A missing document returns `null` — it does not throw. Auth and transport
-failures do throw.
+**Every other type goes through a client**, and it is typed from the generated
+types file without a type argument:
 
-Documents come back flattened, with metadata under underscored keys:
+```ts
+import { createClient } from '@winglet/next'
+
+const client = createClient()
+
+const room  = await client.get('accommodation', 'cabin-3')
+const rooms = await client.list('accommodation', { limit: 20 })
+```
+
+Do not reach for `custom` because you could not find a named accessor. If
+`types list` shows the type, `client.get` reads it.
+
+A missing document returns `null` — it does not throw. Auth and transport
+failures do throw. Documents come back flattened, with metadata under
+underscored keys:
 
 ```ts
 home.title        // a content field
 home._status      // 'draft' | 'published'
 home._updatedAt
-home.custom?.hours
 ```
 
 ## Publishing and freshness
 
-Reads are cached and tagged, so a published change invalidates them. `init`
-mounts a revalidate route in the app; the publish webhook calls it. If content
-looks stale in development, Next's fetch cache is persistent — clear `.next`
-before assuming the CMS is wrong.
+Reads are cached with `force-cache` and tagged, so a published change
+invalidates exactly them. `init` mounts a revalidate route in the app; the
+publish webhook calls it.
 
 Content is fetched at **build time**, not per request. The site keeps serving
 whatever it last built even if the CMS is unreachable. Do not convert reads to
 runtime fetches to "keep them fresh" — that trades the site's independence for
-nothing.
+nothing. If content looks stale in development, Next's fetch cache is
+persistent: clear `.next` before assuming the CMS is wrong.
 
 ## Editing content as an agent
 
-An MCP server exposes `list_documents`, `get_document`, `create_document`,
-`update_document` and `publish`. Prefer it over raw HTTP when it is available:
-it is typed, and it keeps the write key out of your context.
+An MCP server exposes `list_documents`, `list_content_types`, `get_document`,
+`create_document`, `update_document` and `publish`. Prefer it over raw HTTP when
+it is available: it is typed, and it keeps the write key out of your context.
+
+Call `list_content_types` first. It is how you learn what this project actually
+defines rather than assuming.
 
 `create_document` and `update_document` write a **draft**. Nothing reaches the
 live site until `publish`.
+
+`update_document` is a patch keyed by dot path — `{"custom.hours": "…",
+"seo.title": "…"}`. Pass only what you are changing; everything you do not name
+is left exactly as it was. Never send a whole document to change one field.
+
+A type may be a **singleton**. `create_document` is refused for one that already
+holds a document — find it with `list_documents` and update it instead.
+
+## Checking your work
+
+```bash
+npx winglet lint
+```
+
+Reports broken internal links and images published with no description. It is
+tuned to stay silent when unsure, so a finding is worth acting on. Run it after
+a bulk import — that is what it was built for.
 
 ## Things that will bite you
 
 - **Do not commit `.env.local`.** `init` adds it to `.gitignore`; check that it did.
 - **The write key is not a read key.** Never put a write key in client code or
   in a `NEXT_PUBLIC_` variable.
-- **An unclaimed project cannot upload images** and expires after 14 days. Tell
-  the owner to open the claim link — that is what makes the project theirs.
-- **The free plan is one site.** A second site needs an upgrade; the link is not
-  consumed by the refusal, so they can upgrade and claim afterwards.
-- **Do not add a content type.** v1's four are fixed. Use `custom`.
+- **Hand over the claim link.** See above. It is the most common way a session
+  ends with nothing usable.
+- **Read `types list` before assuming a model.** The seeded four are a start,
+  and most real projects have moved past them.
+- **Model changes are additive.** Plan a field before adding it; you cannot take
+  it back once documents exist.
