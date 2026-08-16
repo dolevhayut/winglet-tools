@@ -26,9 +26,16 @@ export interface UsageOptions extends CommonOptions {
   readonly plan?: string | undefined
 }
 
-/** §12's document limits, plus §14.4's tighter cap before adoption. */
+/**
+ * §12's document limits.
+ *
+ * There is no `anonymous` tier any more. §14.4 used to cap a project nobody
+ * owned at 25, and migration 017 removed it: an unclaimed project has no
+ * organisation, so it lands on `free` like any other. Reporting a ceiling the
+ * server stopped enforcing is worse than reporting none, because the operator
+ * plans around it.
+ */
 const DOCUMENT_LIMITS: Readonly<Record<string, number>> = {
-  anonymous: 25,
   free: 100,
   pro: 1_000,
   studio: 10_000,
@@ -103,10 +110,11 @@ export async function usageCommand(io: Io, options: UsageOptions): Promise<void>
 
   const snapshot = await fetchContentSnapshot(context.apiBaseUrl, context.readKey)
 
-  // An unclaimed project still holds a live claim token, and §14.4 caps those
-  // at 25 documents rather than the free plan's 100.
-  const inferredPlan = context.config?.claim === undefined ? 'free' : 'anonymous'
-  const plan = options.plan ?? inferredPlan
+  // `free` whether or not a claim link is still outstanding — since migration
+  // 017 the two are the same ceiling, so holding a token no longer tells us
+  // anything about the limit. A paid plan is a server-side fact a read key
+  // cannot observe, so it has to be named with --plan.
+  const plan = options.plan ?? 'free'
   const max = DOCUMENT_LIMITS[plan]
 
   const perType = [...snapshot.types].sort().map((typeKey) => ({
