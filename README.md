@@ -79,3 +79,34 @@ pnpm install && pnpm typecheck && pnpm test && pnpm build
 `product.config.ts` lives here and nowhere else: every name, prefix and domain is
 derived from one constant, and a guard fails the build if the name is ever typed
 by hand.
+
+## Licence, and where these come from
+
+MIT. Each package carries its own copy.
+
+They are **not on npm yet**, so `init` wires a project to the
+[v0.1.0 release](https://github.com/dolevhayut/winglet-tools/releases/tag/v0.1.0)
+tarballs. A tarball is the one form every package manager accepts — npm and yarn
+cannot resolve a git subpath, and pnpm refuses a git package's build script
+without an `onlyBuiltDependencies` allowlist. The tarball needs neither, because
+`dist` is already inside it.
+
+To pin one by hand:
+
+```jsonc
+{
+  "dependencies": {
+    "@winglet/next": "https://github.com/dolevhayut/winglet-tools/releases/download/v0.1.0/winglet-next-0.1.0.tgz"
+  }
+}
+```
+
+The version lives in the URL rather than a semver range. That goes away on
+publication.
+
+## Two tracks
+
+These tools are the free half and they always will be. The service they talk to
+comes two ways: a studio you host yourself, or a managed cloud at $49/year per
+site that gets every new feature first. Same repository, same CLI — the cloud
+asks for a token.
