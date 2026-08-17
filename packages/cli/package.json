@@ -1,7 +1,30 @@
 {
   "name": "@winglet/cli",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Create and operate a Winglet project from the command line: scaffold a site, define content types, import from another CMS, edit and publish.",
+  "license": "MIT",
+  "author": "Dolev Hayut",
+  "homepage": "https://github.com/dolevhayut/winglet-tools#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dolevhayut/winglet-tools.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/dolevhayut/winglet-tools/issues"
+  },
+  "keywords": [
+    "cms",
+    "headless-cms",
+    "cli",
+    "nextjs",
+    "content",
+    "ai-agent",
+    "codegen"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "winglet": "./dist/index.js"

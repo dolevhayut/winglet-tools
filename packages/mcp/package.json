@@ -1,7 +1,29 @@
 {
   "name": "@winglet/mcp",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for Winglet, so a coding agent can read, write and publish content directly in a conversation.",
+  "license": "MIT",
+  "author": "Dolev Hayut",
+  "homepage": "https://github.com/dolevhayut/winglet-tools#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dolevhayut/winglet-tools.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/dolevhayut/winglet-tools/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "cms",
+    "headless-cms",
+    "ai-agent",
+    "claude"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "winglet-mcp": "./dist/stdio.js"

@@ -1,7 +1,31 @@
 {
   "name": "@winglet/next",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Read content from Winglet in a Next.js App Router site: typed accessors, signed image derivatives, and tagged caching that a publish invalidates.",
+  "license": "MIT",
+  "author": "Dolev Hayut",
+  "homepage": "https://github.com/dolevhayut/winglet-tools#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dolevhayut/winglet-tools.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/dolevhayut/winglet-tools/issues"
+  },
+  "keywords": [
+    "cms",
+    "headless-cms",
+    "nextjs",
+    "app-router",
+    "content",
+    "sdk",
+    "rtl",
+    "hebrew"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
