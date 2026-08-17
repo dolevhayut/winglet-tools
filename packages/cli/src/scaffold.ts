@@ -19,6 +19,8 @@ import { displayPath } from './detect'
 import { ENV_FILE, writeEnvFile } from './env-file'
 import { ensureIgnored } from './gitignore'
 import { CONFIG_DIR } from './local-config'
+import type { NextConfigResult } from './next-config'
+import { ensureHtmlLimitedBots } from './next-config'
 
 /**
  * Everything `init` and `link` both do to a customer's project, in one place.
@@ -98,6 +100,8 @@ export interface ScaffoldResult {
   readonly types: WrittenFile | undefined
   readonly agents: WrittenFile
   readonly revalidate: WrittenFile
+  /** M21.1 — metadata has to reach AI crawlers inside the `<head>`. */
+  readonly nextConfig: NextConfigResult
   readonly gitignoreAdded: readonly string[]
 }
 
@@ -191,6 +195,11 @@ export function scaffold(input: ScaffoldInput): ScaffoldResult {
     types: input.writeTypes ? scaffoldTypes(input) : undefined,
     agents: scaffoldAgents(input),
     revalidate: scaffoldRevalidateRoute(input),
+    nextConfig: ensureHtmlLimitedBots({
+      root: input.app.root,
+      cliBin: CLI_BIN,
+      display: (absolute) => displayPath(input.app.root, absolute),
+    }),
     gitignoreAdded: gitignore.added,
   }
 }

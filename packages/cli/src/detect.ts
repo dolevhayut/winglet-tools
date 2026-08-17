@@ -4,6 +4,9 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PRODUCT_NAME } from '@product'
 
 import { CliError, EXIT } from './exit'
+// One list, because `init` both detects the config and writes to it. Two copies
+// drifting would mean detecting a `.cjs` config and then scaffolding beside it.
+import { NEXT_CONFIG_FILES } from './next-config'
 
 /**
  * PRD §5: "אין תמיכה ב־Vue / Nuxt / Astro / WordPress ב־v1 — Next.js App
@@ -20,13 +23,6 @@ const APP_DIR_CANDIDATES = ['app', join('src', 'app')] as const
 
 /** A directory is the App Router only if it holds a root layout. */
 const ROOT_LAYOUT_FILES = ['layout.tsx', 'layout.ts', 'layout.jsx', 'layout.js'] as const
-
-const NEXT_CONFIG_FILES = [
-  'next.config.ts',
-  'next.config.mjs',
-  'next.config.js',
-  'next.config.cjs',
-] as const
 
 export const PACKAGE_MANAGERS = ['pnpm', 'yarn', 'bun', 'npm'] as const
 export type PackageManager = (typeof PACKAGE_MANAGERS)[number]

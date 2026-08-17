@@ -15,6 +15,7 @@ import { MARK, line } from '../io'
 import type { Io } from '../io'
 import type { ClaimRecord } from '../local-config'
 import { writeLocalConfig } from '../local-config'
+import { manualInstruction } from '../next-config'
 import { generateRevalidateSecret, scaffold } from '../scaffold'
 import type { ScaffoldResult, WrittenFile } from '../scaffold'
 import { TEMPLATE_NAMES, templateNamed } from '../templates'
@@ -203,6 +204,16 @@ function report(
       kept: 'Kept your edited revalidate route at',
     }),
   )
+  io.write(
+    fileLine(result.nextConfig, {
+      created: 'Wrote AI-crawler metadata config →',
+      updated: 'Added AI-crawler metadata config to',
+      unchanged: 'AI-crawler metadata config in place →',
+      kept: 'Left your Next config untouched:',
+    }),
+  )
+  const manual = manualInstruction(result.nextConfig)
+  if (manual !== undefined) io.write(`\n${manual}\n\n`)
 
   const types = resolved.seededTypes
   io.write(
@@ -319,6 +330,14 @@ export async function initCommand(io: Io, options: InitOptions): Promise<void> {
         types: result.types === undefined ? null : { path: result.types.path, outcome: result.types.outcome },
         agents: { path: result.agents.path, outcome: result.agents.outcome },
         revalidate: { path: result.revalidate.path, outcome: result.revalidate.outcome },
+        nextConfig: {
+          path: result.nextConfig.path,
+          outcome: result.nextConfig.outcome,
+          // Present only when the shape was not safe to edit. An agent reading
+          // this JSON can then apply the line itself, which is the whole reason
+          // the refusal carries the line rather than just a warning.
+          manual: result.nextConfig.manual ?? null,
+        },
         config: { path: configPath },
         gitignoreAdded: result.gitignoreAdded,
       },

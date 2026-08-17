@@ -7,6 +7,7 @@ import { CliError, EXIT } from '../exit'
 import { MARK, line } from '../io'
 import type { Io } from '../io'
 import { writeLocalConfig } from '../local-config'
+import { manualInstruction } from '../next-config'
 import { generateRevalidateSecret, scaffold } from '../scaffold'
 import type { CommonOptions } from './context'
 import { emitJson, loadPartialContext } from './context'
@@ -109,6 +110,11 @@ export async function linkCommand(
         types: result.types === undefined ? null : { path: result.types.path, outcome: result.types.outcome },
         agents: { path: result.agents.path, outcome: result.agents.outcome },
         revalidate: { path: result.revalidate.path, outcome: result.revalidate.outcome },
+        nextConfig: {
+          path: result.nextConfig.path,
+          outcome: result.nextConfig.outcome,
+          manual: result.nextConfig.manual ?? null,
+        },
         config: { path: configPath },
         gitignoreAdded: result.gitignoreAdded,
       },
@@ -130,5 +136,14 @@ export async function linkCommand(
       `${result.revalidate.outcome === 'kept' ? 'Kept your edited revalidate route at' : 'Revalidate route →'} ${result.revalidate.label}`,
     ),
   )
+  io.write(
+    line(
+      result.nextConfig.outcome === 'kept' ? MARK.warn : MARK.done,
+      `${result.nextConfig.outcome === 'kept' ? 'Left your Next config untouched:' : 'AI-crawler metadata config →'} ${result.nextConfig.label}`,
+    ),
+  )
+  const manual = manualInstruction(result.nextConfig)
+  if (manual !== undefined) io.write(`\n${manual}\n`)
+
   io.write(`\nRead content with \`getPage('home')\`. Run \`${CLI_BIN} pull\` for a local copy.\n`)
 }
