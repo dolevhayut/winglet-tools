@@ -2,9 +2,10 @@ import type { Metadata } from 'next'
 
 import { ENV } from '@product'
 
+import { createClient } from './client'
 import type { EnvSource } from './config'
 import { imageProps } from './image'
-import type { ImageRef, SeoFields } from './types'
+import type { BuildPayload, ImageRef, SeoFields } from './types'
 
 /**
  * M21.2 — a site's `<head>` comes from the document the owner edits.
@@ -480,4 +481,191 @@ export function businessJsonLd(
 export function jsonLdHtml(value: BusinessJsonLd | null): string | null {
   if (value === null) return null
   return JSON.stringify(value).replace(/</gu, '\\u003c')
+}
+
+/* ── sitemap and robots (M21.4) ───────────────────────────────────────────── */
+
+/**
+ * Where a type's documents live on the site.
+ *
+ * A string for a singleton that owns one fixed path, a function for a type with
+ * one page per document, and absence for a type that has no page of its own —
+ * a stay rule and a testimonial are read on other pages and have no URL to give.
+ *
+ * THIS IS NOT INFERRED, AND THAT IS THE WHOLE DESIGN. A slug is not a route:
+ * `bikta-marva` is served at `/accommodations/bikta-marva`, and the CMS cannot
+ * know the difference because the routing lives in the customer's app. Guessing
+ * `/{typeKey}/{slug}` would be right for the demo and wrong for the next site,
+ * and a sitemap full of URLs that 404 is worse than no sitemap: it teaches a
+ * crawler that this host lies about what it has.
+ */
+export type SitemapRoute<TDocument = SeoDocument> =
+  | string
+  | ((document: TDocument) => string | null | undefined)
+
+export interface SitemapOptions {
+  readonly origin?: string | undefined
+  readonly env?: EnvSource | undefined
+  /**
+   * Per type. Types not named here are omitted.
+   *
+   * Omitted entirely, the seeded `page` type is used at `/{slug}` with `home`
+   * at the root — the same convention `metadataFrom` already relies on, seeded
+   * by this package and shipped in every template.
+   */
+  readonly routes?: Readonly<Record<string, SitemapRoute>> | undefined
+  /** The client to read through. Defaults to the configured one. */
+  readonly client?: { readonly getAll: () => Promise<BuildPayload> } | undefined
+}
+
+interface SitemapEntry {
+  readonly url: string
+  readonly lastModified?: Date | undefined
+}
+
+function resolveRoute(route: SitemapRoute, document: SeoDocument): string | undefined {
+  const path = typeof route === 'string' ? route : route(document)
+  if (path === null || path === undefined) return undefined
+  const trimmedPath = path.trim()
+  return trimmedPath.length === 0 ? undefined : trimmedPath
+}
+
+function lastModified(document: SeoDocument): Date | undefined {
+  const value = fields(document)['_updatedAt']
+  if (typeof value !== 'string') return undefined
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? undefined : date
+}
+
+/**
+ * A sitemap, from one request.
+ *
+ * `getAll` rather than a call per type: it is the endpoint M13 built for
+ * exactly this, and it carries the project cache tag, so the publish webhook
+ * that already purges the site's pages purges the sitemap with them. Next
+ * caches `sitemap.ts` by default, which means without that tag a sitemap would
+ * be generated once at build and then quietly describe an older site forever.
+ * No `revalidate` interval is needed and none is set: an interval would be a
+ * guess about how often someone publishes, and the tag is the fact.
+ *
+ * Returns an empty array rather than throwing when the API is unreachable. A
+ * sitemap that 500s is removed from Search Console as broken; an empty one is
+ * merely uninformative, and the next revalidation repairs it.
+ */
+export function sitemapFrom(options: SitemapOptions = {}): () => Promise<SitemapEntry[]> {
+  return async (): Promise<SitemapEntry[]> => {
+    const origin = readOrigin(options.env ?? process.env, options.origin)
+    // Every URL in a sitemap must be absolute and on this host. Without an
+    // origin there is nothing truthful to emit.
+    if (origin === undefined) return []
+
+    /*
+     * A client of its own rather than the one `index.ts` memoises: that one is
+     * private to that module, and importing it here would pull the whole
+     * top-level surface into this entry point to reach a single function. A
+     * build script that called `configure()` passes its client instead, which
+     * is what the option is for.
+     */
+    const client = options.client ?? createClient()
+    let payload: BuildPayload
+    try {
+      payload = await client.getAll()
+    } catch {
+      return []
+    }
+
+    const routes: Readonly<Record<string, SitemapRoute>> = options.routes ?? {
+      page: (document) => defaultPath(readString(fields(document), 'slug')),
+    }
+
+    const entries: SitemapEntry[] = []
+    const seen = new Set<string>()
+
+    for (const [typeKey, route] of Object.entries(routes)) {
+      const documents: readonly SeoDocument[] =
+        typeKey in payload.documents
+          ? (payload.documents[typeKey as keyof BuildPayload['documents']] as readonly SeoDocument[])
+          : (payload.documentsByType[typeKey] ?? [])
+
+      for (const document of documents) {
+        const path = resolveRoute(route, document)
+        if (path === undefined) continue
+
+        const url = new URL(path, origin).toString()
+        // A singleton route given as a string yields the same URL for every
+        // document of that type, and a duplicate <loc> is a validation error.
+        if (seen.has(url)) continue
+        seen.add(url)
+
+        const modified = lastModified(document)
+        entries.push(modified === undefined ? { url } : { url, lastModified: modified })
+      }
+    }
+
+    return entries
+  }
+}
+
+/**
+ * Crawlers that are named because naming them is a decision.
+ *
+ * `robots.txt` allows everything by default, so listing these grants nothing
+ * that was not already granted. What it does is put the choice somewhere a
+ * human can see and reverse — a site that decides its content should not train
+ * a model edits one line here, rather than discovering there was never a line.
+ *
+ * Google's own guidance is that `robots.txt` is how AI crawler access is
+ * managed, and that no `llms.txt` is needed for AI Overviews or AI Mode.
+ */
+export const AI_CRAWLERS: readonly string[] = [
+  'GPTBot',
+  'OAI-SearchBot',
+  'ChatGPT-User',
+  'ClaudeBot',
+  'Claude-Web',
+  'Claude-User',
+  'PerplexityBot',
+  'Perplexity-User',
+  'Google-Extended',
+  'Applebot-Extended',
+  'Amazonbot',
+  'Bytespider',
+  'Meta-ExternalAgent',
+  'cohere-ai',
+  'CCBot',
+]
+
+export interface RobotsOptions {
+  readonly origin?: string | undefined
+  readonly env?: EnvSource | undefined
+  /** Set false to disallow the crawlers in `AI_CRAWLERS`. */
+  readonly allowAi?: boolean | undefined
+  readonly disallow?: readonly string[] | undefined
+}
+
+export interface RobotsResult {
+  readonly rules: ReadonlyArray<{
+    readonly userAgent: string | readonly string[]
+    readonly allow?: string | undefined
+    readonly disallow?: string | readonly string[] | undefined
+  }>
+  readonly sitemap?: string | undefined
+}
+
+export function robotsFrom(options: RobotsOptions = {}): RobotsResult {
+  const origin = readOrigin(options.env ?? process.env, options.origin)
+  const disallow = options.disallow ?? []
+
+  const rules: RobotsResult['rules'] = [
+    { userAgent: '*', allow: '/', ...(disallow.length === 0 ? {} : { disallow }) },
+    options.allowAi === false
+      ? { userAgent: [...AI_CRAWLERS], disallow: '/' }
+      : { userAgent: [...AI_CRAWLERS], allow: '/' },
+  ]
+
+  // Omitted rather than guessed. A `Sitemap:` line pointing at a host that is
+  // not this one sends every crawler that reads it somewhere wrong.
+  return origin === undefined
+    ? { rules }
+    : { rules, sitemap: new URL('/sitemap.xml', origin).toString() }
 }
