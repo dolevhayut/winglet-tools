@@ -24,10 +24,25 @@ import { wireErrorSchema } from './schemas'
  * `fetch`, so the same code path serves build scripts and tests.
  */
 
-/** `RequestInit` plus the Next-specific field, which the DOM lib does not know. */
+/**
+ * `RequestInit` plus the Next-specific field, which the DOM lib does not know.
+ *
+ * `tags` is a MUTABLE `string[]`, and that is not an oversight. It was
+ * `readonly string[]`, which compiled for as long as no file in this package
+ * pulled Next's types into the program: without them `RequestInit` is the DOM
+ * lib's, which has no `next` key at all, so this interface was free to declare
+ * whatever it liked. `seo.ts` imports `Metadata` from `next` — a type-only
+ * import — and that loads Next's own `RequestInit` augmentation, which declares
+ * `tags?: string[]`. A readonly array is not assignable to a mutable one, so the
+ * `extends` became an error in a file nobody had touched.
+ *
+ * Matching Next's declaration is the honest fix. Narrowing a member of an
+ * interface you claim to extend was always a latent lie; it just had no way to
+ * be caught.
+ */
 export interface CachedRequestInit extends RequestInit {
   readonly next?: {
-    readonly tags?: readonly string[]
+    readonly tags?: string[]
     readonly revalidate?: number | false
   }
 }
@@ -80,7 +95,11 @@ function nextOptions(
   tags: readonly string[],
   revalidate: number | false | undefined,
 ): NonNullable<CachedRequestInit['next']> {
-  return revalidate === undefined ? { tags } : { tags, revalidate }
+  // Copied rather than passed through: callers hand us a readonly array, and
+  // Next's own declaration wants a mutable one. A fresh array satisfies both
+  // and hands out no reference the caller could still be holding.
+  const mutable = [...tags]
+  return revalidate === undefined ? { tags: mutable } : { tags: mutable, revalidate }
 }
 
 async function readErrorEnvelope(

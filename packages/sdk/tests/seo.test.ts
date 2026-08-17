@@ -25,6 +25,18 @@ const env = {
   [ENV.readKey]: READ_KEY,
 } as const
 
+/**
+ * `metadataBase` is declared `string | URL | null`, so it is narrowed here once
+ * rather than asserted on directly in eight places.
+ */
+function baseOrigin(meta: {
+  readonly metadataBase?: string | URL | null | undefined
+}): string | undefined {
+  const base = meta.metadataBase
+  if (base === undefined || base === null) return undefined
+  return base instanceof URL ? base.origin : new URL(base).origin
+}
+
 function document(fields: SeoDocument): SeoDocument {
   return { _id: 'doc-1', _type: 'page', ...fields }
 }
@@ -163,7 +175,7 @@ describe('alternates.canonical', () => {
   it('is the slug’s path against the configured origin', () => {
     const meta = metadataFrom(document({ slug: 'rooms' }), { env: { ...env, [ENV.siteOrigin]: origin } })
     expect(meta.alternates?.canonical).toBe('/rooms')
-    expect(meta.metadataBase?.origin).toBe(origin)
+    expect(baseOrigin(meta)).toBe(origin)
   })
 
   /** The convention this package seeds: `getPage('home')` is the site root. */
@@ -193,21 +205,21 @@ describe('alternates.canonical', () => {
     expect(meta.openGraph?.url).toBeUndefined()
     // The title still comes through — suppressing a URL is not suppressing SEO.
     expect(meta.title).toBe('The Guesthouse')
-    expect(meta.metadataBase?.origin).toBe(origin)
+    expect(baseOrigin(meta)).toBe(origin)
   })
 
   it('adds a scheme to a bare host and strips a trailing slash', () => {
     const meta = metadataFrom(document({ slug: 'rooms' }), {
       env: { ...env, [ENV.siteOrigin]: 'guesthouse.example/' },
     })
-    expect(meta.metadataBase?.origin).toBe('https://guesthouse.example')
+    expect(baseOrigin(meta)).toBe('https://guesthouse.example')
   })
 
   it('falls back to the deployment’s production host', () => {
     const meta = metadataFrom(document({ slug: 'rooms' }), {
       env: { ...env, VERCEL_PROJECT_PRODUCTION_URL: 'guesthouse.example' },
     })
-    expect(meta.metadataBase?.origin).toBe('https://guesthouse.example')
+    expect(baseOrigin(meta)).toBe('https://guesthouse.example')
   })
 
   /**
@@ -217,7 +229,7 @@ describe('alternates.canonical', () => {
   it('is omitted when no origin is configured', () => {
     const meta = metadataFrom(document({ slug: 'rooms' }), { env })
     expect(meta.alternates).toBeUndefined()
-    expect(meta.metadataBase).toBeUndefined()
+    expect(baseOrigin(meta)).toBeUndefined()
   })
 
   it('is omitted when the configured origin is unparseable', () => {
@@ -231,7 +243,7 @@ describe('alternates.canonical', () => {
     const meta = metadataFrom(document({ title: 'A page' }), { env: { ...env, [ENV.siteOrigin]: origin } })
     expect(meta.alternates).toBeUndefined()
     // The origin is still known, so relative OG URLs resolve.
-    expect(meta.metadataBase?.origin).toBe(origin)
+    expect(baseOrigin(meta)).toBe(origin)
   })
 })
 
@@ -250,7 +262,7 @@ describe('openGraph', () => {
   })
 
   it('defaults to a website', () => {
-    expect(metadataFrom(document({ title: 'A page' }), { env }).openGraph?.type).toBe('website')
+    expect(metadataFrom(document({ title: 'A page' }), { env }).openGraph).toMatchObject({ type: 'website' })
   })
 
   it('is omitted entirely when the document says nothing', () => {
