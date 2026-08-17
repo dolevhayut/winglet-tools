@@ -1,10 +1,12 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  // Two entries, two subpaths. `revalidate` is separate so that importing the
-  // main entry never pulls in `next/cache`, which only exists inside a Next
-  // runtime.
-  entry: ['src/index.ts', 'src/revalidate.ts'],
+  // Three entries, three subpaths. `revalidate` is separate so that importing
+  // the main entry never pulls in `next/cache`, which only exists inside a Next
+  // runtime; `seo` is separate so that its `Metadata` type — the one place this
+  // package names a type from `next` — stays out of the main entry's
+  // declarations, where it would make the SDK untypeable without Next installed.
+  entry: ['src/index.ts', 'src/revalidate.ts', 'src/seo.ts'],
   format: ['esm'],
   target: 'node20',
   dts: true,

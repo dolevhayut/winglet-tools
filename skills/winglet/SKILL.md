@@ -190,6 +190,38 @@ home._status      // 'draft' | 'published'
 home._updatedAt
 ```
 
+## Page metadata
+
+Do not type a `<title>` or a meta description into the code. Every type carries
+a `seo` object the owner edits, and `metadataFor` turns it into Next metadata —
+including a 1200x630 Open Graph image built from `seo.image`:
+
+```ts
+import { metadataFor } from '@winglet/next/seo'
+
+export const generateMetadata = metadataFor(() => getPage('home'), { path: '/' })
+```
+
+Set `WINGLET_SITE_ORIGIN` to the site's real origin. Without it there is no
+canonical URL at all — deliberately, because a canonical naming the wrong host
+removes the right page from search results, while none merely leaves the crawler
+to work it out.
+
+`path` is the page's URL, defaulting to `/{slug}` and to `/` for the slug
+`home`. A nested route has to say so; a root layout reading a settings singleton
+must pass `path: false`, because that document is not a page.
+
+The Open Graph image URL is permanent and safe for a social network to cache
+forever. Rotating the project's read key is the one thing that breaks cards
+already shared.
+
+**Leave `htmlLimitedBots` in `next.config.ts` alone.** `init` puts it there so
+that GPTBot, ClaudeBot, PerplexityBot and OAI-SearchBot receive the `<head>`
+before the body on dynamically-rendered pages; none of them runs JavaScript, so
+without it they read a page with no title. The value repeats Next's own built-in
+bot list on purpose — the option **replaces** that list rather than extending
+it, so trimming it to "just the AI ones" silently breaks every social preview.
+
 ## Publishing and freshness
 
 Reads are cached with `force-cache` and tagged, so a published change

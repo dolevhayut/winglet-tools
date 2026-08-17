@@ -68,6 +68,19 @@ export const ENV = {
   writeKey: `${ENV_PREFIX}WRITE_KEY`,
   previewKey: `${ENV_PREFIX}PREVIEW_KEY`,
   revalidateSecret: `${ENV_PREFIX}REVALIDATE_SECRET`,
+  /**
+   * The site's own public origin, e.g. `https://example.com` (M21.2).
+   *
+   * A canonical URL is the one piece of metadata a CMS genuinely cannot derive:
+   * the content knows its slug, the deployment knows its host, and only the
+   * customer knows which host is the real one. Configured once here rather than
+   * passed at every `generateMetadata` call site.
+   *
+   * NOT `NEXT_PUBLIC_`. It is read while rendering on the server, and a value
+   * inlined into every client bundle for no reason is a value that will
+   * eventually be read from a browser by mistake.
+   */
+  siteOrigin: `${ENV_PREFIX}SITE_ORIGIN`,
 } as const
 
 /* ── API keys (§7: sha256 in DB, prefix shown in UI) ──────────────────────── */
