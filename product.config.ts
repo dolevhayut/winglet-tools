@@ -45,7 +45,7 @@ export const CLI_BIN = PRODUCT_SLUG
  * so an upgrade is a changed line rather than a changed number. That is the
  * trade until publication, and publication deletes this whole block.
  */
-export const CLIENT_VERSION = '0.1.1' as const
+export const CLIENT_VERSION = '0.1.2' as const
 
 export function releaseTarball(packageName: string, version: string = CLIENT_VERSION): string {
   const bare = packageName.replace(`${NPM_SCOPE}/`, `${PRODUCT_SLUG}-`)
