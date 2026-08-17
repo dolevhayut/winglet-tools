@@ -93,6 +93,22 @@ describe('sitemapFrom', () => {
     expect(entries.map((entry) => entry.url)).toEqual(['https://example.co.il/x/b'])
   })
 
+  /**
+   * Found by shipping a sitemap that omitted `/area` — a real page of the demo
+   * that renders every area guide and is itself no document.
+   */
+  it('carries paths that are not documents, without inventing a date for them', async () => {
+    const client = clientReturning(payload())
+
+    const entries = await sitemapFrom({ env: ORIGIN, client, extra: ['/area', '/about'] })()
+
+    expect(entries.map((entry) => entry.url)).toEqual([
+      'https://example.co.il/area',
+      'https://example.co.il/about',
+    ])
+    expect(entries[0]?.lastModified).toBeUndefined()
+  })
+
   it('emits nothing when no origin is configured, because every URL must be absolute', async () => {
     const client = clientReturning(
       payload({ documents: { page: [{ slug: 'about' }], post: [], product: [], collection: [] } }),

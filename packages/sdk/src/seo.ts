@@ -516,6 +516,15 @@ export interface SitemapOptions {
   readonly routes?: Readonly<Record<string, SitemapRoute>> | undefined
   /** The client to read through. Defaults to the configured one. */
   readonly client?: { readonly getAll: () => Promise<BuildPayload> } | undefined
+  /**
+   * Paths that are not documents.
+   *
+   * Every site has some: an `/about` written in JSX, a `/contact`, or a page
+   * that lists a type without being one of it — the demo's `/area` renders
+   * every area guide and is itself no document, so nothing in `routes` could
+   * ever name it. Found by shipping a sitemap that quietly omitted a real page.
+   */
+  readonly extra?: readonly string[] | undefined
 }
 
 interface SitemapEntry {
@@ -580,6 +589,17 @@ export function sitemapFrom(options: SitemapOptions = {}): () => Promise<Sitemap
 
     const entries: SitemapEntry[] = []
     const seen = new Set<string>()
+
+    for (const path of options.extra ?? []) {
+      const url = new URL(path, origin).toString()
+      if (seen.has(url)) continue
+      seen.add(url)
+      // No `lastModified`: the page is code, and its content changes when the
+      // documents it renders change, which this cannot see. A made-up date is
+      // worse than none — a crawler that is told a page is fresh and finds it
+      // unchanged learns to discount the signal for the whole host.
+      entries.push({ url })
+    }
 
     for (const [typeKey, route] of Object.entries(routes)) {
       const documents: readonly SeoDocument[] =

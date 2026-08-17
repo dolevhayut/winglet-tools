@@ -1,6 +1,6 @@
 {
   "name": "@winglet/cli",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Create and operate a Winglet project from the command line: scaffold a site, define content types, import from another CMS, edit and publish.",
   "license": "MIT",
   "author": "Dolev Hayut",
