@@ -26,6 +26,37 @@ export const SDK_PACKAGE = `${NPM_SCOPE}/next` as const
 export const CLI_PACKAGE = `${NPM_SCOPE}/cli` as const
 export const CLI_BIN = PRODUCT_SLUG
 
+/**
+ * The version of the client packages a fresh `init` wires a project to.
+ *
+ * NOT YET ON NPM. `SDK_PACKAGE` is the name these will publish under, and
+ * asking a package manager for it today returns "not in the npm registry" —
+ * which is what `init` did for every user, non-fatally, so the failure only
+ * surfaced later at build time.
+ *
+ * Until they are published, the dependency is the release tarball. A tarball is
+ * the one form every package manager accepts: npm and yarn cannot resolve a git
+ * SUBPATH at all, and pnpm can but then refuses to run the package's build
+ * script without an `onlyBuiltDependencies` allowlist. A tarball needs neither,
+ * because `dist` is already inside it and nothing is built on the customer's
+ * machine.
+ *
+ * The cost is that the version lives in the URL rather than in a semver range,
+ * so an upgrade is a changed line rather than a changed number. That is the
+ * trade until publication, and publication deletes this whole block.
+ */
+export const CLIENT_VERSION = '0.1.0' as const
+
+export function releaseTarball(packageName: string, version: string = CLIENT_VERSION): string {
+  const bare = packageName.replace(`${NPM_SCOPE}/`, `${PRODUCT_SLUG}-`)
+  return `${REPO_URL}/releases/download/v${version}/${bare}-${version}.tgz`
+}
+
+/** What `init` puts in `dependencies` for the SDK. */
+export function sdkDependencySpec(): string {
+  return releaseTarball(SDK_PACKAGE)
+}
+
 /* ── environment variables written into the customer's .env.local ─────────── */
 
 export const ENV_PREFIX = `${upper}_` as const

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 
-import { SDK_PACKAGE } from '@product'
+import { SDK_PACKAGE, sdkDependencySpec } from '@product'
 
 import type { PackageManager } from './detect'
 import { isPackageInstalled } from './detect'
@@ -35,7 +35,7 @@ export interface InstallResult {
 }
 
 export function installCommand(manager: PackageManager): string {
-  return [manager, ...(ADD_ARGS[manager] ?? ['install']), SDK_PACKAGE].join(' ')
+  return [manager, ...(ADD_ARGS[manager] ?? ['install']), sdkDependencySpec()].join(' ')
 }
 
 export interface InstallInput {
@@ -53,14 +53,18 @@ export function installSdk(input: InstallInput): InstallResult {
     return { ...base, outcome: 'already-present', detail: undefined }
   }
 
-  const result = spawnSync(input.manager, [...(ADD_ARGS[input.manager] ?? ['install']), SDK_PACKAGE], {
-    cwd: input.root,
-    encoding: 'utf8',
-    timeout: INSTALL_TIMEOUT_MS,
-    // Nothing interactive may reach the terminal: §11 forbids prompts, and a
-    // package manager waiting on stdin would hang an unattended agent forever.
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  const result = spawnSync(
+    input.manager,
+    [...(ADD_ARGS[input.manager] ?? ['install']), sdkDependencySpec()],
+    {
+      cwd: input.root,
+      encoding: 'utf8',
+      timeout: INSTALL_TIMEOUT_MS,
+      // Nothing interactive may reach the terminal: §11 forbids prompts, and a
+      // package manager waiting on stdin would hang an unattended agent forever.
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  )
 
   if (result.error !== undefined) {
     return { ...base, outcome: 'failed', detail: result.error.message }
@@ -72,6 +76,25 @@ export function installSdk(input: InstallInput): InstallResult {
       ...base,
       outcome: 'failed',
       detail: lastLine ?? `exit code ${String(result.status ?? -1)}`,
+    }
+  }
+
+  /*
+   * A zero exit is not proof. This step reported success for every user of this
+   * tool while installing nothing at all: the package name is not on npm yet,
+   * and depending on the manager and the flags a miss can still exit 0 — the
+   * customer then discovered it at build time, from an error naming a registry
+   * rather than anything to do with this CLI.
+   *
+   * So the claim is checked against the filesystem before it is made. It is the
+   * same check `already-present` uses two lines above; the only reason it was
+   * not also used here is that nobody thought the exit code could lie.
+   */
+  if (!isPackageInstalled(input.root, SDK_PACKAGE)) {
+    return {
+      ...base,
+      outcome: 'failed',
+      detail: `${input.manager} reported success but ${SDK_PACKAGE} is not in node_modules.`,
     }
   }
   return { ...base, outcome: 'installed', detail: undefined }

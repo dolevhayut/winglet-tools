@@ -171,3 +171,33 @@ describe('the generated types file', () => {
     expect(diagnostics.map((d) => `${d.file}: ${d.message}`)).toEqual([])
   }, 30_000)
 })
+
+/**
+ * What the compile test above CANNOT see.
+ *
+ * It maps the package name to the SDK's own source through `paths`, and that
+ * file is in the program — so TypeScript accepts the augmentation whether or
+ * not the generated file imports anything. A customer resolves the same name
+ * through `node_modules` instead, and there TS2664 is raised unless the file
+ * doing the augmenting has imported the module first.
+ *
+ * The result was a generator whose output compiled in this suite and failed on
+ * the first `build` of a freshly scaffolded project — the one moment nothing
+ * else in the project imports the SDK yet.
+ *
+ * A string assertion is the honest instrument here, and only here: the import
+ * IS the mechanism, and the compiler in this environment is structurally unable
+ * to miss it.
+ */
+describe('the augmentation imports what it augments', () => {
+  it('emits an import of the SDK before declaring the module', () => {
+    const generated = generateTypes()
+
+    const importAt = generated.indexOf(`import type {} from '${SDK_PACKAGE}'`)
+    const declareAt = generated.indexOf(`declare module '${SDK_PACKAGE}'`)
+
+    expect(importAt).toBeGreaterThanOrEqual(0)
+    expect(declareAt).toBeGreaterThanOrEqual(0)
+    expect(importAt).toBeLessThan(declareAt)
+  })
+})
