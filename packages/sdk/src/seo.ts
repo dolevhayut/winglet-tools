@@ -181,6 +181,16 @@ function readSeo(data: Readonly<Record<string, unknown>>): SeoFields {
   return value as SeoFields
 }
 
+/** An `image` field, which is an object the API wrote, or nothing. */
+function readImage(
+  data: Readonly<Record<string, unknown>>,
+  key: string,
+): ImageRef | undefined {
+  const value = data[key]
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  return value as ImageRef
+}
+
 function trimmed(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
   const text = value.trim()
@@ -342,4 +352,132 @@ export function metadataFor<TProps = MetadataProps>(
   options: MetadataOptions = {},
 ): (props: TProps) => Promise<Metadata> {
   return async (props: TProps): Promise<Metadata> => metadataFrom(await load(props), options)
+}
+
+/* ── JSON-LD (M21.3) ──────────────────────────────────────────────────────── */
+
+/**
+ * A business, as `LocalBusiness` or one of its subtypes.
+ *
+ * WHY THIS TYPE AND NOT FAQPage, WHICH THE PLAN ASKED FOR FIRST.
+ * `FAQPage` was removed from Google Search on 15 June 2026, and before that it
+ * had been narrowed to authoritative government and health sites, so no
+ * customer of this product was ever eligible. `Review` and `AggregateRating`
+ * are worse than useless here: a business that controls the reviews about
+ * itself is explicitly ineligible for the star feature, and every testimonial
+ * in this product is collected by the business about itself. `LocalBusiness`
+ * is what survived, and it wants exactly two properties this model already
+ * holds. See `research/geo-2026.md` in the private repo.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO. It does not read the project's model to
+ * discover which type is the business, and it does not guess from field kinds.
+ * There is one business per site and the layout that renders this knows which
+ * document it is; a stored `schemaType` earns its place when many types need
+ * telling apart, not here. And a guessed type is worse than none — structured
+ * data is a public assertion a machine reads, and Google's own guidance is that
+ * markup which does not match the page is a reason to discount the page's
+ * markup entirely.
+ */
+export interface BusinessJsonLdOptions {
+  /**
+   * A schema.org type. `LocalBusiness` is the safe default; a guest house is
+   * more precisely `LodgingBusiness`, a clinic `MedicalBusiness`, a restaurant
+   * `Restaurant`. Any subtype inherits every property emitted here.
+   */
+  readonly type?: string | undefined
+  /** The site's origin, overriding the environment. */
+  readonly origin?: string | undefined
+  readonly env?: EnvSource | undefined
+  /**
+   * Field names, when the project's differ from the templates'.
+   *
+   * The defaults are the names every template this product ships uses. A
+   * customer who renamed a field gets LESS markup rather than wrong markup,
+   * which is the only safe direction to be wrong in.
+   */
+  readonly fields?:
+    | {
+        readonly name?: string | undefined
+        readonly address?: string | undefined
+        readonly telephone?: string | undefined
+        readonly image?: string | undefined
+      }
+    | undefined
+}
+
+/** What a caller renders. `null` when the required properties are not present. */
+export type BusinessJsonLd = Readonly<Record<string, unknown>>
+
+export function businessJsonLd(
+  document: SeoDocument | null | undefined,
+  options: BusinessJsonLdOptions = {},
+): BusinessJsonLd | null {
+  if (document === null || document === undefined) return null
+
+  const data = fields(document)
+  const named = options.fields ?? {}
+
+  const name = readString(data, named.name ?? 'title') ?? readString(data, 'name')
+  const address = readString(data, named.address ?? 'address')
+
+  /*
+   * `name` and `address` are the two REQUIRED properties, and an item missing a
+   * required property is not eligible for anything. Emitting it anyway would
+   * publish an incomplete entity claim in exchange for nothing, so this returns
+   * null and the caller renders no script at all.
+   */
+  if (name === undefined || address === undefined) return null
+
+  const env = options.env ?? process.env
+  const seo = readSeo(data)
+  const telephone = readString(data, named.telephone ?? 'phone')
+  const origin = readOrigin(env, options.origin)
+  // Through the same helper the Open Graph tag uses, so the logo a share card
+  // shows and the logo the knowledge panel is offered cannot disagree.
+  const image = openGraphImage(readImage(data, named.image ?? 'logo'), options.env)
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': options.type ?? 'LocalBusiness',
+    name,
+    /*
+     * A string is legal for `address`, but Google asks for a `PostalAddress`
+     * and gives more for one. The model holds a single free-text field, so the
+     * whole of it becomes `streetAddress` rather than being split on commas —
+     * a split guesses which fragment is the city and gets it wrong for exactly
+     * the addresses that are not a street and a number, which in this market is
+     * most of them.
+     */
+    address: { '@type': 'PostalAddress', streetAddress: address },
+    ...(telephone === undefined ? {} : { telephone }),
+    ...(origin === undefined ? {} : { url: origin }),
+    ...(seo.description === undefined ? {} : { description: seo.description }),
+    ...(image === null ? {} : { image: image.url }),
+  }
+  /*
+   * OPENING HOURS ARE DELIBERATELY ABSENT, and this is the interesting omission.
+   * Templates store them as `{ day, hours }` with both values written by the
+   * owner in their own language — "ראשון", "09:00-17:00" and, in real data,
+   * "א׳-ה׳" and "סגור". `openingHoursSpecification` needs a schema.org
+   * `dayOfWeek` and two `hh:mm` times, and every route from the first to the
+   * second is a guess about a string a human typed. The same reasoning that
+   * withdrew three of `lint`'s five checks in M16 applies exactly: a wrong
+   * opening hour published as machine-readable fact is worse than no opening
+   * hour, because a customer is turned away by it rather than merely not helped.
+   * A structured hours field would fix this, and that is a model change.
+   */
+}
+
+/**
+ * The JSON, escaped so it is safe inside a script tag.
+ *
+ * `</script>` inside owner-authored content would otherwise close the tag and
+ * everything after it becomes markup — the plainest XSS in the product, in a
+ * field an owner is invited to type prose into. Escaping `<` as `<` is
+ * valid JSON, parses identically, and cannot terminate the element. `JSON.parse`
+ * on the other side is unaffected.
+ */
+export function jsonLdHtml(value: BusinessJsonLd | null): string | null {
+  if (value === null) return null
+  return JSON.stringify(value).replace(/</gu, '\\u003c')
 }
