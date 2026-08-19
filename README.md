@@ -84,25 +84,35 @@ by hand.
 
 MIT. Each package carries its own copy.
 
-They are **not on npm yet**, so `init` wires a project to the
-[v0.1.0 release](https://github.com/dolevhayut/winglet-tools/releases/tag/v0.1.0)
-tarballs. A tarball is the one form every package manager accepts — npm and yarn
-cannot resolve a git subpath, and pnpm refuses a git package's build script
-without an `onlyBuiltDependencies` allowlist. The tarball needs neither, because
-`dist` is already inside it.
+They are on npm:
+
+```
+winglet-cli · winglet-next · winglet-mcp
+```
 
 To pin one by hand:
 
 ```jsonc
 {
   "dependencies": {
-    "winglet-next": "https://github.com/dolevhayut/winglet-tools/releases/download/v0.1.0/winglet-next-0.1.0.tgz"
+    "winglet-next": "^0.3.1"
   }
 }
 ```
 
-The version lives in the URL rather than a semver range. That goes away on
-publication.
+**Unscoped, and the registry decided that rather than taste.** `@winglet` has
+six packages published under it by an unrelated author and cannot be obtained.
+The CLI had to be unscoped in any case: `npx <name>` resolves a PACKAGE of that
+name, not a bin of that name inside a scope — and the bare product name is
+refused too, as *too similar to the existing package `figlet`*. Hence
+`npx winglet-cli init`, while the installed binary stays `winglet`, so every
+command typed afterwards is unchanged.
+
+Before publication these installed from release tarballs, which was the one form
+every package manager accepts: npm and yarn cannot resolve a git subpath, and
+pnpm refuses a git package's build script without an `onlyBuiltDependencies`
+allowlist. Both problems disappear with a registry install, and so does the
+allowlist a consumer used to need.
 
 ## Two tracks
 

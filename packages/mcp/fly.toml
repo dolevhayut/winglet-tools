@@ -36,7 +36,15 @@ kill_timeout = '30s'
   # across every tenant; the project write key arrives per request on the
   # Authorization header and is never stored. Baking one in would make anyone
   # who reaches the port an editor of that one project.
-  WINGLET_API_URL = 'https://winglet-api-rho.vercel.app/v1'
+  # WINGLET_API_URL is DELETED, not re-pointed at the new domain. API_BASE_URL is
+  # derived from ROOT_DOMAIN and now resolves, so an override here would be a
+  # second source for one host — which is how they drift. Same reasoning as the
+  # three overrides removed from the Vercel projects.
+  #
+  # primary_region is still 'iad', and the comment that justified it — "next to
+  # the API" — is now INVERTED: the API and the database both moved to Ireland,
+  # so every MCP call crosses an ocean the API no longer crosses. Worth moving,
+  # measured rather than assumed, and not at the same time as a domain switch.
 
 [http_service]
   internal_port = 8080

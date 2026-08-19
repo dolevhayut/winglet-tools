@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server'
-import { API_BASE_URL, ENV, PRODUCT_NAME, PRODUCT_SLUG, REPO_URL } from '@product'
+import { API_BASE_URL, ENV, MCP_ORIGIN, PRODUCT_NAME, PRODUCT_SLUG, REPO_URL } from '@product'
 import { createMcpHonoApp } from '@modelcontextprotocol/hono'
 import { createMcpHandler, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/server'
 
@@ -42,9 +42,15 @@ const API_BASE = process.env[ENV.apiUrl] ?? API_BASE_URL
  * contents of our discovery document.
  */
 const FLY_APP = process.env['FLY_APP_NAME']
+
+/*
+ * The address a client actually typed, which since the domain moved is the
+ * product's own host and not the platform's. Deployed, this used to default to
+ * `<app>.fly.dev`; that is now merely where the container happens to run.
+ */
 const PUBLIC_URL = new URL(
   process.env[`${PRODUCT_SLUG.toUpperCase()}_MCP_PUBLIC_URL`] ??
-    (FLY_APP === undefined ? `http://localhost:${String(PORT)}` : `https://${FLY_APP}.fly.dev`),
+    (FLY_APP === undefined ? `http://localhost:${String(PORT)}` : MCP_ORIGIN),
 )
 
 /**
@@ -69,6 +75,15 @@ const PUBLIC_URL = new URL(
  */
 const allowedHosts = [
   PUBLIC_URL.hostname,
+  /*
+   * The product's own hostname, DERIVED, and listed even when `PUBLIC_URL`
+   * already resolves to it — because the day a custom domain was pointed at
+   * this app, every request through it answered
+   * `403 Invalid Host: mcp.<domain>` while the platform hostname kept working.
+   * That is the URL on the landing page and in the MCP registry entry, so the
+   * published address was the one address that did not work.
+   */
+  new URL(MCP_ORIGIN).hostname,
   'localhost',
   '127.0.0.1',
   '[::1]',
@@ -79,7 +94,7 @@ const allowedHosts = [
     .filter((h) => h.length > 0),
 ]
 
-const allowedOrigins = [PUBLIC_URL.hostname, 'localhost', '127.0.0.1']
+const allowedOrigins = [PUBLIC_URL.hostname, new URL(MCP_ORIGIN).hostname, 'localhost', '127.0.0.1']
 
 function configFromRequest(request: Request): ServerConfig | null {
   const header = request.headers.get('authorization') ?? ''
