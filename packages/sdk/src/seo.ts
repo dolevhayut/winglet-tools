@@ -76,17 +76,29 @@ function openGraphImage(
   // the same picture on the page can never disagree: one place decides which
   // asset a ref points at and where its alt text comes from. The `srcSet` it
   // also computes is discarded, which costs six HMACs and buys that guarantee.
-  const props = imageProps(image, {
-    width: OG_WIDTH,
-    height: OG_HEIGHT,
-    fit: 'crop',
-    // Explicit, not the server's default. A social scraper is the least
-    // capable HTTP client that will ever touch this product, and several still
-    // fail on WebP — the format that makes the on-page image worth serving is
-    // the wrong bet on a card that has to render everywhere or not at all.
-    format: 'jpeg',
-    ...(env === undefined ? {} : { env }),
-  })
+  /*
+   * Wrapped, because `imageProps` signs the URL and signing needs the project's
+   * read key — so a project whose environment is incomplete throws here rather
+   * than returning null. Every caller of this is metadata or JSON-LD, and this
+   * module's own rule is that neither may take down a page whose body renders
+   * perfectly well. A missing image is a missing card; a thrown one is a 500.
+   */
+  let props: ReturnType<typeof imageProps>
+  try {
+    props = imageProps(image, {
+      width: OG_WIDTH,
+      height: OG_HEIGHT,
+      fit: 'crop',
+      // Explicit, not the server's default. A social scraper is the least
+      // capable HTTP client that will ever touch this product, and several still
+      // fail on WebP — the format that makes the on-page image worth serving is
+      // the wrong bet on a card that has to render everywhere or not at all.
+      format: 'jpeg',
+      ...(env === undefined ? {} : { env }),
+    })
+  } catch {
+    return null
+  }
   if (props === null) return null
 
   return { url: props.src, width: OG_WIDTH, height: OG_HEIGHT, alt: props.alt }
@@ -406,13 +418,15 @@ export interface BusinessJsonLdOptions {
     | undefined
 }
 
-/** What a caller renders. `null` when the required properties are not present. */
-export type BusinessJsonLd = Readonly<Record<string, unknown>>
+/** What a caller renders. `null` when the emitter has nothing truthful to say. */
+export type JsonLd = Readonly<Record<string, unknown>>
+/** @deprecated The name from when this module emitted only a business. */
+export type BusinessJsonLd = JsonLd
 
 export function businessJsonLd(
   document: SeoDocument | null | undefined,
   options: BusinessJsonLdOptions = {},
-): BusinessJsonLd | null {
+): JsonLd | null {
   if (document === null || document === undefined) return null
 
   const data = fields(document)
@@ -478,7 +492,7 @@ export function businessJsonLd(
  * valid JSON, parses identically, and cannot terminate the element. `JSON.parse`
  * on the other side is unaffected.
  */
-export function jsonLdHtml(value: BusinessJsonLd | null): string | null {
+export function jsonLdHtml(value: JsonLd | null): string | null {
   if (value === null) return null
   return JSON.stringify(value).replace(/</gu, '\\u003c')
 }
@@ -688,4 +702,228 @@ export function robotsFrom(options: RobotsOptions = {}): RobotsResult {
   return origin === undefined
     ? { rules }
     : { rules, sitemap: new URL('/sitemap.xml', origin).toString() }
+}
+
+/* ── Article, BreadcrumbList (M21.5) ──────────────────────────────────────── */
+
+export interface ArticleJsonLdOptions {
+  /**
+   * Who wrote it. REQUIRED HERE THOUGH GOOGLE DOES NOT REQUIRE IT, because the
+   * model cannot supply it: the seeded `post` type has `title`, `excerpt`,
+   * `body`, `cover`, `publishedAt` and `tags`, and no author at all. Rather
+   * than emit an article with no attribution, the caller names one — usually
+   * the business, which is the truth of who published it.
+   */
+  readonly author: string
+  readonly path?: string | false | undefined
+  readonly origin?: string | undefined
+  readonly env?: EnvSource | undefined
+  readonly fields?:
+    | {
+        readonly headline?: string | undefined
+        readonly datePublished?: string | undefined
+        readonly image?: string | undefined
+      }
+    | undefined
+}
+
+/**
+ * An article.
+ *
+ * `Article` has NO required properties — "there are no required properties;
+ * instead, add the properties that apply to your content" is Google's wording,
+ * and the earlier research in this project said otherwise and was wrong. So the
+ * gate here is only a headline, which every type in every template has, and
+ * everything else appears when the document holds it.
+ */
+export function articleJsonLd(
+  document: SeoDocument | null | undefined,
+  options: ArticleJsonLdOptions,
+): JsonLd | null {
+  if (document === null || document === undefined) return null
+
+  const data = fields(document)
+  const named = options.fields ?? {}
+  const seo = readSeo(data)
+  const headline =
+    readString(data, named.headline ?? 'title') ?? trimmed(seo.title)
+  if (headline === undefined) return null
+
+  const env = options.env ?? process.env
+  const origin = readOrigin(env, options.origin)
+  const published = readString(data, named.datePublished ?? 'publishedAt')
+  const modified = readString(data, '_updatedAt')
+  const image = openGraphImage(readImage(data, named.image ?? 'cover'), options.env)
+  const path =
+    options.path === false ? undefined : (options.path ?? defaultPath(readString(data, 'slug')))
+  const url = origin === undefined || path === undefined ? undefined : new URL(path, origin).toString()
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline,
+    // An Organization rather than a Person: a business publishing its own
+    // journal is the case this model serves, and claiming a named human who is
+    // not in the content would be inventing an entity.
+    author: { '@type': 'Organization', name: options.author },
+    ...(published === undefined ? {} : { datePublished: published }),
+    ...(modified === undefined ? {} : { dateModified: modified }),
+    ...(seo.description === undefined ? {} : { description: seo.description }),
+    ...(image === null ? {} : { image: image.url }),
+    ...(url === undefined ? {} : { mainEntityOfPage: url }),
+  }
+}
+
+/** One step of a trail. The last one is the current page and needs no path. */
+export interface BreadcrumbStep {
+  readonly name: string
+  readonly path?: string | undefined
+}
+
+/**
+ * A breadcrumb trail.
+ *
+ * SUPPLIED, NOT DERIVED. A document knows its slug and nothing about what
+ * contains it — `bikta-marva` does not know it lives under `/accommodations`,
+ * and splitting a URL on slashes recovers the segments but not their names, so
+ * the trail would read "accommodations" where the site says "המתחמים". The page
+ * rendering the breadcrumb already knows both, because it renders both.
+ */
+export function breadcrumbJsonLd(
+  trail: readonly BreadcrumbStep[],
+  options: { readonly origin?: string | undefined; readonly env?: EnvSource | undefined } = {},
+): JsonLd | null {
+  // One step is the page itself, which is not a trail and produces a
+  // single-item list that says nothing a crawler did not already know.
+  if (trail.length < 2) return null
+
+  const origin = readOrigin(options.env ?? process.env, options.origin)
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: trail.map((step, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: step.name,
+      ...(step.path === undefined || origin === undefined
+        ? {}
+        : { item: new URL(step.path, origin).toString() }),
+    })),
+  }
+}
+
+/* ── Product and Offer (M21.6) ────────────────────────────────────────────── */
+
+export interface ProductJsonLdOptions {
+  /**
+   * ISO 4217, and REQUIRED, because the model does not carry it. Only the
+   * seeded `product` type has a `currency` field; every `price` in every
+   * template is a bare number, and an `Offer` without `priceCurrency` is an
+   * incomplete offer. Defaulting to ILS would be a guess that is wrong the
+   * first time this ships outside Israel, and wrong silently.
+   */
+  readonly currency: string
+  readonly path?: string | false | undefined
+  readonly origin?: string | undefined
+  readonly env?: EnvSource | undefined
+  readonly fields?:
+    | {
+        readonly name?: string | undefined
+        readonly price?: string | undefined
+        readonly image?: string | undefined
+      }
+    | undefined
+}
+
+/**
+ * A product, with its offer.
+ *
+ * Returns null without a price. `Product` on its own is legal, but the reason
+ * to emit one is the price and availability a comparison engine reads; a
+ * Product with no Offer occupies the markup budget and answers nothing.
+ */
+export function productJsonLd(
+  document: SeoDocument | null | undefined,
+  options: ProductJsonLdOptions,
+): JsonLd | null {
+  if (document === null || document === undefined) return null
+
+  const data = fields(document)
+  const named = options.fields ?? {}
+  const name = readString(data, named.name ?? 'title')
+  const price = data[named.price ?? 'price']
+  if (name === undefined || typeof price !== 'number' || !Number.isFinite(price)) return null
+
+  const env = options.env ?? process.env
+  const origin = readOrigin(env, options.origin)
+  const seo = readSeo(data)
+  const image = openGraphImage(readImage(data, named.image ?? 'heroImage'), options.env)
+  const path =
+    options.path === false ? undefined : (options.path ?? defaultPath(readString(data, 'slug')))
+  const url = origin === undefined || path === undefined ? undefined : new URL(path, origin).toString()
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name,
+    ...(seo.description === undefined ? {} : { description: seo.description }),
+    ...(image === null ? {} : { image: image.url }),
+    offers: {
+      '@type': 'Offer',
+      price,
+      priceCurrency: options.currency,
+      /*
+       * `InStock` is NOT assumed. This model has no availability for a template
+       * price — a guest house room may be booked and a treatment may be
+       * withdrawn — and telling a comparison engine that something is available
+       * when it is not is the one wrong answer that costs a real customer a
+       * real journey. `inStock` on the seeded product type is a boolean this
+       * reads when it is there.
+       */
+      ...(typeof data['inStock'] === 'boolean'
+        ? {
+            availability: `https://schema.org/${data['inStock'] ? 'InStock' : 'OutOfStock'}`,
+          }
+        : {}),
+      ...(url === undefined ? {} : { url }),
+    },
+  }
+}
+
+/* ── ImageObject (M21.7) ──────────────────────────────────────────────────── */
+
+/**
+ * An image, described.
+ *
+ * `alt` becomes `name` and the caption becomes `caption`, which is the
+ * distinction schema.org draws and the one the model already stores separately:
+ * alt describes what is in the picture for someone who cannot see it, a caption
+ * explains why it is on the page. Both are read by AI systems, and this product
+ * is one of the few CMSs that has the first as a required field.
+ *
+ * No `creator` and no `license`: nothing in the model records either, and an
+ * unattributed licence claim is worse than none.
+ */
+export function imageObjectJsonLd(
+  item: { readonly image?: unknown; readonly alt?: unknown; readonly caption?: unknown } | null | undefined,
+  options: { readonly env?: EnvSource | undefined } = {},
+): JsonLd | null {
+  if (item === null || item === undefined) return null
+
+  const image = openGraphImage((item.image ?? null) as ImageRef | null, options.env)
+  if (image === null) return null
+
+  const alt = typeof item.alt === 'string' ? trimmed(item.alt) : undefined
+  const caption = typeof item.caption === 'string' ? trimmed(item.caption) : undefined
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ImageObject',
+    contentUrl: image.url,
+    width: image.width,
+    height: image.height,
+    ...(alt === undefined ? {} : { name: alt }),
+    ...(caption === undefined ? {} : { caption }),
+  }
 }
