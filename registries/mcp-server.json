@@ -3,7 +3,7 @@
   "name": "io.github.dolevhayut/winglet",
   "description": "Edit the content of a Next.js site without running an agent. List, read, create, update and publish pages, posts and products in a hosted CMS built for sites that coding agents produced.",
   "version": "0.1.0",
-  "websiteUrl": "https://winglet.dev",
+  "websiteUrl": "https://winglet.cloud",
   "repository": {
     "url": "https://github.com/dolevhayut/winglet",
     "source": "github"
@@ -29,7 +29,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://mcp.winglet.dev/mcp",
+      "url": "https://mcp.winglet.cloud/mcp",
       "headers": [
         {
           "name": "Authorization",

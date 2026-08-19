@@ -57,7 +57,7 @@ the trade-off against the CLI: reach for MCP for a point edit, the CLI for setup
 or batch work.
 
 ```bash
-claude mcp add winglet --transport http https://mcp.winglet.dev/mcp
+claude mcp add winglet --transport http https://mcp.winglet.cloud/mcp
 ```
 
 ## Layout

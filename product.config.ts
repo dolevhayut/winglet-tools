@@ -93,7 +93,19 @@ export const keyPrefix = (scope: KeyScope): string => `${PRODUCT_SLUG}_${scope}_
 
 /* ── domains (§9, §14.7) ──────────────────────────────────────────────────── */
 
-export const ROOT_DOMAIN = `${PRODUCT_SLUG}.dev` as const
+/*
+ * REGISTERED 2026-08-19, and until that day it was not.
+ *
+ * `.dev`, `.com`, `.io`, `.app`, `.ai`, `.sh`, `.so` and `.studio` were all
+ * taken; `.co.il` too. `.cloud` is the one that is also CORRECT rather than
+ * merely free: this product sells two tracks that differ by who runs the
+ * server, and the paid one is the cloud.
+ *
+ * Everything below derives from this line, which is the whole point of it —
+ * the studio, the API, the CDN, the MCP server and every link the API mints
+ * moved hosts in one edit.
+ */
+export const ROOT_DOMAIN = `${PRODUCT_SLUG}.cloud` as const
 export const STUDIO_ORIGIN = `https://${ROOT_DOMAIN}` as const
 export const API_ORIGIN = `https://api.${ROOT_DOMAIN}` as const
 export const CDN_ORIGIN = `https://cdn.${ROOT_DOMAIN}` as const
@@ -114,12 +126,18 @@ export const INSTALL_COMMAND = `npx ${PRODUCT_SLUG} init` as const
 /**
  * Where the studio ACTUALLY answers right now.
  *
- * `STUDIO_ORIGIN` above is the domain this product is *intended* to live on,
- * derived from the slug so a rename still moves in one edit. But a link minted
- * for a customer has to point at a host that resolves today — a claim link to
- * an unregistered domain is a dead link, which is worse than an ugly one. So
- * the origin used for MINTING links is overridable per deployment, while the
- * intended domain stays the default and the single source of the name.
+ * `STUDIO_ORIGIN` above is the domain this product lives on, derived from the
+ * slug so a rename still moves in one edit. A link minted for a customer has to
+ * point at a host that RESOLVES, though, and for a long time this one did not —
+ * a claim link to an unregistered domain is a dead link, which is worse than an
+ * ugly one. So the origin used for MINTING links stays overridable per
+ * deployment: it is what carried every link while the domain did not exist, and
+ * it is what a preview deployment still needs.
+ *
+ * The same gap sat under the CLI, silently. `API_BASE_URL` is its default when
+ * no flag and no environment variable are given, and it pointed at a host with
+ * no DNS record at all — so `init` without `--api-url` could never have worked
+ * for anyone. Registering the domain is what makes that default true.
  *
  * Server-side only. Links are minted by the API, never in a browser, so this
  * deliberately does not use a `NEXT_PUBLIC_` prefix — the value would then be
