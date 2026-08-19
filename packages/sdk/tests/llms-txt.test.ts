@@ -110,6 +110,22 @@ describe('llmsTxtFrom', () => {
     expect(await llmsTxtFrom({ title: 'האתר', env: ORIGIN, client })()).toBe('# האתר\n')
   })
 
+  it('takes the extras heading in the site’s own language', async () => {
+    // A file whose sections read Hebrew, Hebrew, then "Other pages" is the
+    // jargon this product does not do. The default is English and wrong for
+    // most sites here, which is why the option exists.
+    const text = await llmsTxtFrom({
+      title: 'x',
+      env: ORIGIN,
+      client: clientReturning(payload()),
+      extraHeading: 'עמודים נוספים',
+      extra: [{ path: '/area', title: 'הסביבה' }],
+    })()
+
+    expect(text).toContain('## עמודים נוספים')
+    expect(text).not.toContain('Other pages')
+  })
+
   it('lists app-owned pages last, under their own heading', async () => {
     const client = clientReturning(payload())
 

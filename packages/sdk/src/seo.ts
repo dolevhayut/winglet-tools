@@ -727,6 +727,16 @@ export interface LlmsTxtOptions {
   readonly routes?: Readonly<Record<string, SitemapRoute>> | undefined
   /** The heading each type's pages are listed under. Defaults to the type key. */
   readonly headings?: Readonly<Record<string, string>> | undefined
+  /**
+   * The heading `extra` is listed under.
+   *
+   * It has a default and the default is English, which is wrong for most sites
+   * this serves — the first Hebrew site to ship this got a file whose sections
+   * read העמוד הראשי, המתחמים, then "Other pages". A generated file that
+   * changes language halfway through is the jargon this product does not do,
+   * so the option exists and every Hebrew site should pass it.
+   */
+  readonly extraHeading?: string | undefined
   readonly client?: { readonly getAll: () => Promise<BuildPayload> } | undefined
   readonly extra?: readonly LlmsExtra[] | undefined
 }
@@ -833,7 +843,9 @@ export function llmsTxtFrom(options: LlmsTxtOptions): () => Promise<string> {
 
     // Last, because these are the pages the app knows about and the CMS does
     // not, and a reader that stops early should have read the content first.
-    if (extras.length > 0) lines.push('', '## Other pages', '', ...extras)
+    if (extras.length > 0) {
+      lines.push('', `## ${inline(options.extraHeading ?? 'Other pages')}`, '', ...extras)
+    }
 
     return `${lines.join('\n')}\n`
   }
