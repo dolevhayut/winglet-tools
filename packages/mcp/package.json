@@ -1,6 +1,6 @@
 {
   "name": "@winglet/mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Model Context Protocol server for Winglet, so a coding agent can read, write and publish content directly in a conversation.",
   "license": "MIT",
   "author": "Dolev Hayut",
