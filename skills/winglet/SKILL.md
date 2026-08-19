@@ -222,6 +222,35 @@ without it they read a page with no title. The value repeats Next's own built-in
 bot list on purpose — the option **replaces** that list rather than extending
 it, so trimming it to "just the AI ones" silently breaks every social preview.
 
+## Telling a machine what the site is
+
+Six emitters, all from `@winglet/next/seo`, all returning `null` rather than
+guessing when the content does not carry what the type requires:
+
+| | |
+|---|---|
+| `businessJsonLd` | a business, from a settings singleton. Needs `name` **and** an address, or it yields nothing |
+| `articleJsonLd` | a post. Takes its author as an argument, because no template has an author field |
+| `breadcrumbJsonLd` | a trail. **Supplied by the page**, never derived — a document knows its slug and nothing about what contains it |
+| `productJsonLd` | needs a price **and** a currency. The price field is a bare number everywhere, and defaulting to one currency is wrong the first time a site ships elsewhere |
+| `imageObjectJsonLd` | keeps `alt` (what is in the picture) and `caption` (why it is on the page) apart |
+| `jsonLdHtml` | renders any of them. **Always use it** — it escapes `<`, so a `</script>` typed into a description cannot break out |
+
+```ts
+const ld = jsonLdHtml(businessJsonLd(settings, { type: 'LodgingBusiness' }))
+{ld !== null && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: ld }} />}
+```
+
+Also `sitemapFrom` and `robotsFrom` for `app/sitemap.ts` and `app/robots.ts`,
+and `llmsTxtFrom` for an `app/llms.txt/route.ts`. All three take routes
+**declared per type** — a slug is not a route, and a sitemap full of URLs that
+404 teaches a crawler that the host lies about what it has.
+
+Be accurate about `llms.txt` if you mention it to anyone: Google has said it is
+not needed for AI Overviews or AI Mode, OpenAI's crawler docs do not mention it,
+and most published ones are never fetched. Ship it because it costs four lines,
+not because it works.
+
 ## Publishing and freshness
 
 Reads are cached with `force-cache` and tagged, so a published change

@@ -704,6 +704,141 @@ export function robotsFrom(options: RobotsOptions = {}): RobotsResult {
     : { rules, sitemap: new URL('/sitemap.xml', origin).toString() }
 }
 
+/* ── llms.txt (M21.9) ─────────────────────────────────────────────────────── */
+
+/**
+ * A page named in `llms.txt` that is not a document.
+ *
+ * A bare path is accepted and yields a link whose text IS the path, which is
+ * exactly as informative as the `sitemap.xml` line for the same page — so it
+ * is worth supplying a title. The whole reason this file exists alongside a
+ * sitemap is that it carries names and sentences rather than URLs.
+ */
+export type LlmsExtra = string | { readonly path: string; readonly title: string; readonly description?: string | undefined }
+
+export interface LlmsTxtOptions {
+  /** The site's name. The H1, and the only genuinely required value. */
+  readonly title: string
+  /** One sentence, rendered as the blockquote the format calls a summary. */
+  readonly summary?: string | undefined
+  readonly origin?: string | undefined
+  readonly env?: EnvSource | undefined
+  /** Per type, exactly as `sitemapFrom` takes them — same rule, same reason. */
+  readonly routes?: Readonly<Record<string, SitemapRoute>> | undefined
+  /** The heading each type's pages are listed under. Defaults to the type key. */
+  readonly headings?: Readonly<Record<string, string>> | undefined
+  readonly client?: { readonly getAll: () => Promise<BuildPayload> } | undefined
+  readonly extra?: readonly LlmsExtra[] | undefined
+}
+
+/** `[` and `]` end a markdown link's text; a newline ends the list item. */
+function inline(value: string): string {
+  return value.replace(/[[\]]/gu, ' ').replace(/\s+/gu, ' ').trim()
+}
+
+/**
+ * `llms.txt`, and an honest account of what it is worth.
+ *
+ * IT IS ALMOST CERTAINLY NOT READ. Google's own wording is that neither special
+ * schema nor an `llms.txt` is needed to appear in AI Overviews or AI Mode,
+ * OpenAI's crawler documentation does not mention the file, and the measured
+ * figure at the time of writing is that 97% of published ones receive zero AI
+ * requests. It ships because it is a few lines and costs nothing to keep true —
+ * not because anything is known to consume it, and the landing page must not
+ * claim otherwise.
+ *
+ * What it does carry that `sitemap.xml` cannot: a NAME and a SENTENCE per page,
+ * taken from the same `seo` fields the owner already edits and the same
+ * fallbacks `metadataFrom` uses. If some reader does arrive, it reads the
+ * owner's words rather than a list of URLs.
+ *
+ * There is no Next convention for this file — no `llms.ts` the way there is a
+ * `sitemap.ts` — so this returns the text and the app mounts it:
+ *
+ *     // app/llms.txt/route.ts
+ *     const body = llmsTxtFrom({ title: '…', routes: { … } })
+ *     export async function GET() {
+ *       return new Response(await body(), {
+ *         headers: { 'content-type': 'text/plain; charset=utf-8' },
+ *       })
+ *     }
+ *
+ * Absolute URLs, and therefore nothing at all without an origin: a relative
+ * link in a file a machine fetched from an unknown base resolves to nothing.
+ * Unreachable API yields the header alone rather than throwing, for the same
+ * reason `sitemapFrom` returns an empty array.
+ */
+export function llmsTxtFrom(options: LlmsTxtOptions): () => Promise<string> {
+  return async (): Promise<string> => {
+    const origin = readOrigin(options.env ?? process.env, options.origin)
+    const header = [`# ${inline(options.title)}`]
+    const summary = trimmed(options.summary)
+    if (summary !== undefined) header.push('', `> ${inline(summary)}`)
+    if (origin === undefined) return `${header.join('\n')}\n`
+
+    const lines = [...header]
+    const seen = new Set<string>()
+
+    const item = (path: string, title: string, description: string | undefined): string | undefined => {
+      const url = new URL(path, origin).toString()
+      if (seen.has(url)) return undefined
+      seen.add(url)
+      const suffix = description === undefined ? '' : `: ${inline(description)}`
+      return `- [${inline(title)}](${url})${suffix}`
+    }
+
+    const extras = (options.extra ?? [])
+      .map((entry) =>
+        typeof entry === 'string'
+          ? item(entry, entry, undefined)
+          : item(entry.path, entry.title, trimmed(entry.description)),
+      )
+      .filter((line): line is string => line !== undefined)
+
+    let payload: BuildPayload | undefined
+    try {
+      payload = await (options.client ?? createClient()).getAll()
+    } catch {
+      payload = undefined
+    }
+
+    const routes = options.routes ?? {
+      page: (document) => defaultPath(readString(fields(document), 'slug')),
+    }
+
+    for (const [typeKey, route] of Object.entries(routes)) {
+      if (payload === undefined) break
+      const documents: readonly SeoDocument[] =
+        typeKey in payload.documents
+          ? (payload.documents[typeKey as keyof BuildPayload['documents']] as readonly SeoDocument[])
+          : (payload.documentsByType[typeKey] ?? [])
+
+      const section: string[] = []
+      for (const document of documents) {
+        const path = resolveRoute(route, document)
+        if (path === undefined) continue
+        const data = fields(document)
+        const seo = readSeo(data)
+        // The same resolution `metadataFrom` performs, so a page's name here and
+        // its <title> cannot disagree — two sources for one name is how they do.
+        const title = trimmed(seo.title) ?? fallbackTitle(data, undefined)
+        if (title === undefined) continue
+        const line = item(path, title, trimmed(seo.description))
+        if (line !== undefined) section.push(line)
+      }
+
+      if (section.length === 0) continue
+      lines.push('', `## ${inline(options.headings?.[typeKey] ?? typeKey)}`, '', ...section)
+    }
+
+    // Last, because these are the pages the app knows about and the CMS does
+    // not, and a reader that stops early should have read the content first.
+    if (extras.length > 0) lines.push('', '## Other pages', '', ...extras)
+
+    return `${lines.join('\n')}\n`
+  }
+}
+
 /* ── Article, BreadcrumbList (M21.5) ──────────────────────────────────────── */
 
 export interface ArticleJsonLdOptions {
