@@ -43,12 +43,27 @@ export const PRODUCT_NAME = 'Winglet' as const
  * on offer at any price, because the scope belongs to someone else.
  */
 export const SDK_PACKAGE = `${PRODUCT_SLUG}-next` as const
-export const CLI_PACKAGE = PRODUCT_SLUG
+/*
+ * `{slug}-cli`, and NOT the bare slug, because npm refuses the bare slug.
+ *
+ * The publish returns 403: "Package name too similar to existing package
+ * figlet". That check is server-side and runs only on the PUT, so a registry
+ * 404 for the name means UNPUBLISHED and says nothing about whether it can be
+ * published — a distinction that cost one failed publish here after costing a
+ * wrong assumption about the scope an hour earlier.
+ *
+ * npm's own suggestion was `@{owner}/{slug}`, which ties the product to a
+ * person's account. This completes the family already on the registry instead:
+ * {slug}-next, {slug}-mcp, {slug}-cli. The BIN stays the bare slug, so once it
+ * is installed the command a person types is unchanged; only the one-off
+ * `npx` invocation carries the suffix.
+ */
+export const CLI_PACKAGE = `${PRODUCT_SLUG}-cli` as const
 export const MCP_PACKAGE = `${PRODUCT_SLUG}-mcp` as const
 export const CLI_BIN = PRODUCT_SLUG
 
 /** The version of the client packages a fresh `init` wires a project to. */
-export const CLIENT_VERSION = '0.3.0' as const
+export const CLIENT_VERSION = '0.3.1' as const
 
 /**
  * ONE BOOLEAN, because the switch has to be atomic and it has to be reversible.
@@ -67,15 +82,23 @@ export const CLIENT_VERSION = '0.3.0' as const
  * successful publish, never in anticipation of one — and if a publish is rolled
  * back, flipping it to `false` restores a working `init` in one line.
  */
-export const PUBLISHED_TO_NPM = false
+export const PUBLISHED_TO_NPM = true
 
 export function releaseTarball(packageName: string, version: string = CLIENT_VERSION): string {
   return `${REPO_URL}/releases/download/v${version}/${packageName}-${version}.tgz`
 }
 
-/** What `init` puts in `dependencies` for the SDK. */
+/**
+ * The INSTALL TARGET `init` hands the package manager, not a version range.
+ *
+ * That distinction is the whole of it, and getting it wrong shipped once: the
+ * published branch returned a bare `^0.3.0`, which becomes `npm install ^0.3.0`
+ * — and npm reads that as a PACKAGE NAME, not a range. The tarball branch never
+ * showed the bug because a URL is a complete install target on its own, so the
+ * name is implied by the file. A range is not; it needs the name in front of it.
+ */
 export function sdkDependencySpec(): string {
-  return PUBLISHED_TO_NPM ? `^${CLIENT_VERSION}` : releaseTarball(SDK_PACKAGE)
+  return PUBLISHED_TO_NPM ? `${SDK_PACKAGE}@^${CLIENT_VERSION}` : releaseTarball(SDK_PACKAGE)
 }
 
 /* ── environment variables written into the customer's .env.local ─────────── */
@@ -141,8 +164,8 @@ export const GITHUB_ORG = 'dolevhayut' as const
 export const REPO_URL = `https://github.com/${GITHUB_ORG}/${PRODUCT_SLUG}-tools` as const
 export const SKILL_URL = `${REPO_URL}/tree/main/skills/${PRODUCT_SLUG}` as const
 
-/** `npx {slug} init` — the one line a developer copies. */
-export const INSTALL_COMMAND = `npx ${PRODUCT_SLUG} init` as const
+/** The one line a developer copies. Derived, so the name and it cannot drift. */
+export const INSTALL_COMMAND = `npx ${CLI_PACKAGE} init` as const
 
 /**
  * Where the studio ACTUALLY answers right now.

@@ -25,7 +25,7 @@ credit card. It writes `.env.local`, generates types, seeds a starting content
 model, and prints one link the owner clicks to take ownership.
 
 ```bash
-npx winglet init
+npx winglet-cli init
 ```
 
 Exit codes: `0` ok · `1` error · `2` not a Next.js App Router project · `3`
@@ -71,8 +71,8 @@ and no deploy.
 ### Start from a template, not from an empty project
 
 ```bash
-npx winglet templates list                 # what each one defines
-npx winglet templates apply hospitality    # adds its types and objects
+npx winglet-cli templates list                 # what each one defines
+npx winglet-cli templates apply hospitality    # adds its types and objects
 ```
 
 | Template | For |
@@ -92,11 +92,11 @@ seeded project is safe.
 ### Defining types yourself
 
 ```bash
-npx winglet types list                     # what this project defines, as JSON
-npx winglet types add                      # define a content type
-npx winglet types set                      # extend one
-npx winglet objects list                   # reusable field shapes
-npx winglet objects add                    # register one
+npx winglet-cli types list                     # what this project defines, as JSON
+npx winglet-cli types add                      # define a content type
+npx winglet-cli types set                      # extend one
+npx winglet-cli objects list                   # reusable field shapes
+npx winglet-cli objects add                    # register one
 ```
 
 Read `types list` before writing anything. It is the project's real model and it
@@ -114,7 +114,7 @@ or a gallery image is defined once and reused. Objects may contain objects.
 After any model change, regenerate the types file:
 
 ```bash
-npx winglet types
+npx winglet-cli types
 ```
 
 `custom` is still there and still fine for genuinely one-off values. But if the
@@ -128,8 +128,8 @@ Two paths, and they are not the same job.
 **From another CMS** — one command, content and images together:
 
 ```bash
-npx winglet import ./export --from sanity --dry-run
-npx winglet import ./export --from sanity --titles @titles.json
+npx winglet-cli import ./export --from sanity --dry-run
+npx winglet-cli import ./export --from sanity --titles @titles.json
 ```
 
 The model is inferred from the documents, because a schema lives in the other
@@ -298,9 +298,9 @@ holds a document — find it with `list_documents` and update it instead.
 ## Checking your work
 
 ```bash
-npx winglet lint                       # every check
-npx winglet lint --check missing-seo   # one of them
-npx winglet lint --json                # for you to parse
+npx winglet-cli lint                       # every check
+npx winglet-cli lint --check missing-seo   # one of them
+npx winglet-cli lint --json                # for you to parse
 ```
 
 Six checks, each one a fact about a value rather than a judgement about prose:

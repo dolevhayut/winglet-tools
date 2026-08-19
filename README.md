@@ -24,7 +24,7 @@ and batch work, MCP for in-conversation edits. Nothing to configure.
 <img src="docs/media/cli-connect.jpg" alt="Live before signup. Owner control after launch." width="640">
 
 ```bash
-npx winglet init
+npx winglet-cli init
 ```
 
 Creates a content project, writes `.env.local`, generates types and prints one

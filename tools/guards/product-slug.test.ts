@@ -6,6 +6,7 @@ import {
   CLI_BIN,
   CLIENT_VERSION,
   CLI_PACKAGE,
+  INSTALL_COMMAND,
   ENV_PREFIX,
   PRODUCT_SLUG,
   ROOT_DOMAIN,
@@ -102,7 +103,12 @@ describe('published prose names the current product', () => {
   it('the skill file declares the install command as it really is', () => {
     const skill = readSources(['skills'], ['.md']).find((f) => f.path.endsWith('SKILL.md'))
     expect(skill, 'skills/**/SKILL.md is missing').toBeDefined()
-    expect(skill?.text).toContain(`npx ${PRODUCT_SLUG} init`)
+    // INSTALL_COMMAND, not a second copy of the derivation. This assertion used
+    // to spell out `npx ${slug} init` itself, so when the registry forced the
+    // package name to change it failed for the right reason but for the wrong
+    // one — the skill was correct and the guard was stale. Importing the
+    // constant makes it a real check that prose matches config.
+    expect(skill?.text).toContain(INSTALL_COMMAND)
     expect(skill?.text, 'a skill needs frontmatter to be discoverable').toMatch(/^---\n/u)
   })
 })
@@ -120,10 +126,13 @@ describe('derived identity stays internally consistent', () => {
     expect(SDK_PACKAGE).not.toContain('@')
     expect(MCP_PACKAGE).not.toContain('@')
 
-    // The one that is not merely derived but IDENTICAL, because `npx <slug>`
-    // resolves a package of exactly that name. Anything else and the single
-    // command this product is sold on 404s for every reader.
-    expect(CLI_PACKAGE).toBe(PRODUCT_SLUG)
+    // Derived, not identical — and that was the registry's call, not ours.
+    // npm refuses the bare slug as "too similar to existing package figlet",
+    // so `npx <slug> init` can never resolve. What survives is that the BIN is
+    // still the bare slug, so the command a person types after installing is
+    // unchanged; only the npx invocation carries the suffix.
+    expect(CLI_PACKAGE.startsWith(`${PRODUCT_SLUG}-`)).toBe(true)
+    expect(CLI_PACKAGE).not.toContain('@')
 
     expect(CLI_BIN).toBe(PRODUCT_SLUG)
     expect(ENV_PREFIX).toBe(`${PRODUCT_SLUG.toUpperCase()}_`)
@@ -138,7 +147,11 @@ describe('derived identity stays internally consistent', () => {
    */
   it('the dependency spec matches whether the packages are actually published', () => {
     if (PUBLISHED_TO_NPM) {
-      expect(sdkDependencySpec()).toBe(`^${CLIENT_VERSION}`)
+      // The NAME has to be in it. `npm install ^0.3.0` reads the range as a
+      // package name and fails; the tarball branch hid this because a URL is a
+      // complete install target by itself.
+      expect(sdkDependencySpec()).toBe(`${SDK_PACKAGE}@^${CLIENT_VERSION}`)
+      expect(sdkDependencySpec().startsWith(SDK_PACKAGE)).toBe(true)
     } else {
       expect(sdkDependencySpec()).toContain(`${SDK_PACKAGE}-${CLIENT_VERSION}.tgz`)
     }
