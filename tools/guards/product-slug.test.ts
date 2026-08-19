@@ -4,11 +4,15 @@ import { describe, expect, it } from 'vitest'
 
 import {
   CLI_BIN,
+  CLIENT_VERSION,
   CLI_PACKAGE,
   ENV_PREFIX,
   PRODUCT_SLUG,
   ROOT_DOMAIN,
+  MCP_PACKAGE,
+  PUBLISHED_TO_NPM,
   SDK_PACKAGE,
+  sdkDependencySpec,
 } from '@product'
 
 import { REPO_ROOT, matchingLines, readSources } from './walk.js'
@@ -105,10 +109,38 @@ describe('published prose names the current product', () => {
 
 describe('derived identity stays internally consistent', () => {
   it('every derived value is built from the slug', () => {
-    expect(SDK_PACKAGE.startsWith(`@${PRODUCT_SLUG}/`)).toBe(true)
-    expect(CLI_PACKAGE.startsWith(`@${PRODUCT_SLUG}/`)).toBe(true)
+    // UNSCOPED, and asserted rather than assumed. These read `@slug/next` and
+    // `@slug/cli` until publication, when the scope turned out to belong to an
+    // unrelated author and to be unobtainable at any price. The rule the guard
+    // exists for is unchanged — every name is still derived from the slug and
+    // a rename still moves in one edit — so the assertion follows the shape
+    // rather than the shape following the assertion.
+    expect(SDK_PACKAGE.startsWith(`${PRODUCT_SLUG}-`)).toBe(true)
+    expect(MCP_PACKAGE.startsWith(`${PRODUCT_SLUG}-`)).toBe(true)
+    expect(SDK_PACKAGE).not.toContain('@')
+    expect(MCP_PACKAGE).not.toContain('@')
+
+    // The one that is not merely derived but IDENTICAL, because `npx <slug>`
+    // resolves a package of exactly that name. Anything else and the single
+    // command this product is sold on 404s for every reader.
+    expect(CLI_PACKAGE).toBe(PRODUCT_SLUG)
+
     expect(CLI_BIN).toBe(PRODUCT_SLUG)
     expect(ENV_PREFIX).toBe(`${PRODUCT_SLUG.toUpperCase()}_`)
     expect(ROOT_DOMAIN.startsWith(`${PRODUCT_SLUG}.`)).toBe(true)
+  })
+
+  /*
+   * The tarball URL and the semver range are the two things `init` can write
+   * into a customer's package.json, and exactly one of them works at any given
+   * moment. Asserting the pairing is what stops the flag being flipped in
+   * anticipation of a publish that has not happened.
+   */
+  it('the dependency spec matches whether the packages are actually published', () => {
+    if (PUBLISHED_TO_NPM) {
+      expect(sdkDependencySpec()).toBe(`^${CLIENT_VERSION}`)
+    } else {
+      expect(sdkDependencySpec()).toContain(`${SDK_PACKAGE}-${CLIENT_VERSION}.tgz`)
+    }
   })
 })

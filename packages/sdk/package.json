@@ -1,6 +1,6 @@
 {
-  "name": "@winglet/next",
-  "version": "0.2.3",
+  "name": "winglet-next",
+  "version": "0.3.0",
   "description": "Read content from Winglet in a Next.js App Router site: typed accessors, signed image derivatives, and tagged caching that a publish invalidates.",
   "license": "MIT",
   "author": "Dolev Hayut",
@@ -23,9 +23,6 @@
     "rtl",
     "hebrew"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",

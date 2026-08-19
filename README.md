@@ -37,7 +37,7 @@ conversation for an agent to have.
 <img src="docs/media/sdk-read.jpg" alt="Build once. Let owners edit." width="640">
 
 ```ts
-import { getPage, getPosts } from '@winglet/next'
+import { getPage, getPosts } from 'winglet-next'
 
 const home = await getPage('home')
 ```
@@ -64,7 +64,7 @@ claude mcp add winglet --transport http https://mcp.winglet.cloud/mcp
 
 | Path | What |
 |---|---|
-| `packages/sdk` | `@winglet/next` — typed content client and typegen |
+| `packages/sdk` | `winglet-next` — typed content client and typegen |
 | `packages/cli` | `npx winglet` — init, types, pull, claim, usage, link |
 | `packages/mcp` | MCP server, stdio and Streamable HTTP |
 | `skills/winglet` | The agent skill |
@@ -96,7 +96,7 @@ To pin one by hand:
 ```jsonc
 {
   "dependencies": {
-    "@winglet/next": "https://github.com/dolevhayut/winglet-tools/releases/download/v0.1.0/winglet-next-0.1.0.tgz"
+    "winglet-next": "https://github.com/dolevhayut/winglet-tools/releases/download/v0.1.0/winglet-next-0.1.0.tgz"
   }
 }
 ```

@@ -158,7 +158,7 @@ Server components only. The key is server-side and must never reach the browser.
 The four seeded types have named accessors:
 
 ```ts
-import { getPage, getPost, getPosts, getProduct, getProducts, getAll } from '@winglet/next'
+import { getPage, getPost, getPosts, getProduct, getProducts, getAll } from 'winglet-next'
 
 const home     = await getPage('home')          // one document, or null
 const posts    = await getPosts({ limit: 10, tag: 'ai' })
@@ -169,7 +169,7 @@ const payload  = await getAll()                 // everything, for a static buil
 types file without a type argument:
 
 ```ts
-import { createClient } from '@winglet/next'
+import { createClient } from 'winglet-next'
 
 const client = createClient()
 
@@ -197,7 +197,7 @@ a `seo` object the owner edits, and `metadataFor` turns it into Next metadata â€
 including a 1200x630 Open Graph image built from `seo.image`:
 
 ```ts
-import { metadataFor } from '@winglet/next/seo'
+import { metadataFor } from 'winglet-next/seo'
 
 export const generateMetadata = metadataFor(() => getPage('home'), { path: '/' })
 ```
@@ -224,7 +224,7 @@ it, so trimming it to "just the AI ones" silently breaks every social preview.
 
 ## Telling a machine what the site is
 
-Six emitters, all from `@winglet/next/seo`, all returning `null` rather than
+Six emitters, all from `winglet-next/seo`, all returning `null` rather than
 guessing when the content does not carry what the type requires:
 
 | | |

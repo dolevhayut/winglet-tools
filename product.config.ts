@@ -21,40 +21,61 @@ export const PRODUCT_NAME = 'Winglet' as const
 
 /* ── npm identity ─────────────────────────────────────────────────────────── */
 
-export const NPM_SCOPE = `@${PRODUCT_SLUG}` as const
-export const SDK_PACKAGE = `${NPM_SCOPE}/next` as const
-export const CLI_PACKAGE = `${NPM_SCOPE}/cli` as const
+/**
+ * UNSCOPED, and that was decided by the registry rather than by taste.
+ *
+ * These were `@{slug}/next` and `@{slug}/cli` until publication was attempted.
+ * The scope is TAKEN — six packages are published under it by an unrelated
+ * author (`json`, `common-utils`, `react-utils`, `json-schema`, `style-utils`,
+ * `data-loader`), npm's own form answers "This name is unavailable", and an org
+ * name cannot be reassigned. Nothing under that scope will ever be ours.
+ *
+ * The CLI had to be unscoped in any case, and that is the load-bearing half:
+ * `npx {slug} init` resolves a PACKAGE named `{slug}`. It does not find a bin
+ * of that name living inside a scope. Published as `@{slug}/cli`, the one
+ * command on the landing page, in the skill and in `INSTALL_COMMAND` would have
+ * 404ed for every reader — the same defect the API URL had, shipped again.
+ *
+ * And once the CLI is unscoped, a scope on the other two only splits the
+ * identity. `next`, `vite`, `astro`, `svelte`, `tailwindcss` and `prisma` are
+ * all unscoped; this is the norm, not a compromise. What it costs is namespace
+ * protection — anyone may publish `{slug}-studio` tomorrow — and that was not
+ * on offer at any price, because the scope belongs to someone else.
+ */
+export const SDK_PACKAGE = `${PRODUCT_SLUG}-next` as const
+export const CLI_PACKAGE = PRODUCT_SLUG
+export const MCP_PACKAGE = `${PRODUCT_SLUG}-mcp` as const
 export const CLI_BIN = PRODUCT_SLUG
 
+/** The version of the client packages a fresh `init` wires a project to. */
+export const CLIENT_VERSION = '0.3.0' as const
+
 /**
- * The version of the client packages a fresh `init` wires a project to.
+ * ONE BOOLEAN, because the switch has to be atomic and it has to be reversible.
  *
- * NOT YET ON NPM. `SDK_PACKAGE` is the name these will publish under, and
- * asking a package manager for it today returns "not in the npm registry" —
- * which is what `init` did for every user, non-fatally, so the failure only
- * surfaced later at build time.
+ * Before publication the dependency is a release tarball. A tarball is the one
+ * form every package manager accepts: npm and yarn cannot resolve a git SUBPATH
+ * at all, and pnpm can but then refuses to run the package's build script
+ * without an `onlyBuiltDependencies` allowlist. A tarball needs neither,
+ * because `dist` is already inside it and nothing builds on the customer's
+ * machine. The cost is that the version lives in the URL rather than in a
+ * semver range, so an upgrade is a changed line rather than a changed number.
  *
- * Until they are published, the dependency is the release tarball. A tarball is
- * the one form every package manager accepts: npm and yarn cannot resolve a git
- * SUBPATH at all, and pnpm can but then refuses to run the package's build
- * script without an `onlyBuiltDependencies` allowlist. A tarball needs neither,
- * because `dist` is already inside it and nothing is built on the customer's
- * machine.
- *
- * The cost is that the version lives in the URL rather than in a semver range,
- * so an upgrade is a changed line rather than a changed number. That is the
- * trade until publication, and publication deletes this whole block.
+ * Flipping this to `true` BEFORE the packages are actually on npm is the one
+ * way to make `init` worse than it is today: it would write a dependency that
+ * cannot resolve at all, where the tarball still works. So it flips after a
+ * successful publish, never in anticipation of one — and if a publish is rolled
+ * back, flipping it to `false` restores a working `init` in one line.
  */
-export const CLIENT_VERSION = '0.2.3' as const
+export const PUBLISHED_TO_NPM = false
 
 export function releaseTarball(packageName: string, version: string = CLIENT_VERSION): string {
-  const bare = packageName.replace(`${NPM_SCOPE}/`, `${PRODUCT_SLUG}-`)
-  return `${REPO_URL}/releases/download/v${version}/${bare}-${version}.tgz`
+  return `${REPO_URL}/releases/download/v${version}/${packageName}-${version}.tgz`
 }
 
 /** What `init` puts in `dependencies` for the SDK. */
 export function sdkDependencySpec(): string {
-  return releaseTarball(SDK_PACKAGE)
+  return PUBLISHED_TO_NPM ? `^${CLIENT_VERSION}` : releaseTarball(SDK_PACKAGE)
 }
 
 /* ── environment variables written into the customer's .env.local ─────────── */

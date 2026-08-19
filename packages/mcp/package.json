@@ -1,6 +1,6 @@
 {
-  "name": "@winglet/mcp",
-  "version": "0.2.3",
+  "name": "winglet-mcp",
+  "version": "0.3.0",
   "description": "Model Context Protocol server for Winglet, so a coding agent can read, write and publish content directly in a conversation.",
   "license": "MIT",
   "author": "Dolev Hayut",
@@ -21,9 +21,6 @@
     "ai-agent",
     "claude"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "type": "module",
   "bin": {
     "winglet-mcp": "./dist/stdio.js"

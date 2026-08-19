@@ -2,7 +2,7 @@
 #
 # Deploy from the REPOSITORY ROOT, not from this directory:
 #
-#   pnpm --filter @winglet/mcp build
+#   pnpm --filter winglet-mcp build
 #   fly deploy --config packages/mcp/fly.toml --dockerfile packages/mcp/Dockerfile \
 #     --ha=false --smoke-checks=false
 #

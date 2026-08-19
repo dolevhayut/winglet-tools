@@ -1,6 +1,6 @@
 {
-  "name": "@winglet/cli",
-  "version": "0.2.3",
+  "name": "winglet",
+  "version": "0.3.0",
   "description": "Create and operate a Winglet project from the command line: scaffold a site, define content types, import from another CMS, edit and publish.",
   "license": "MIT",
   "author": "Dolev Hayut",
@@ -22,9 +22,6 @@
     "ai-agent",
     "codegen"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "type": "module",
   "bin": {
     "winglet": "./dist/index.js"
