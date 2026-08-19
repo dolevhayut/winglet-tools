@@ -1,4 +1,5 @@
 import { API_BASE_URL, CLI_BIN, ENV, PRODUCT_NAME } from '@product'
+import { version as PACKAGE_VERSION } from '../package.json'
 import { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 
@@ -126,7 +127,20 @@ const TYPE_KEY = z
   .regex(/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/, 'Letters, digits and underscores; must start with a letter.')
 
 export function buildServer(config: ServerConfig): McpServer {
-  const server = new McpServer({ name: PRODUCT_NAME.toLowerCase(), version: '0.1.0' })
+  /*
+   * The version is IMPORTED, not written here.
+   *
+   * It was the literal '0.1.0' and stayed that way through 0.2 and 0.3, because
+   * nothing fails when it is wrong -- every tool works, every test passes, and
+   * the only place it surfaces is the line an MCP client shows a human. So it
+   * had been advertising 0.1.0 for a product published to npm as 0.3.1.
+   *
+   * A literal here cannot be kept true by anything except memory, so it will
+   * drift again the next time the package is released. tsup inlines this at
+   * build time, so there is no runtime file read and no chance of a container
+   * reporting a version different from the code it is running.
+   */
+  const server = new McpServer({ name: PRODUCT_NAME.toLowerCase(), version: PACKAGE_VERSION })
 
   server.registerTool(
     'list_documents',
