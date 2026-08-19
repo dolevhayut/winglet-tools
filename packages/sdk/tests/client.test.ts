@@ -313,7 +313,7 @@ describe('get and list, for a type this build has no schema for', () => {
   })
 
   it('returns null for a slug that does not exist, like the typed accessors', async () => {
-    const spy = recorder(() => failure(404, 'PROJECT_NOT_FOUND'))
+    const spy = recorder(() => failure(404, 'NOT_FOUND'))
     const client = createClient({ env: ENVIRONMENT, fetchImplementation: spy.fetchImplementation })
 
     await expect(client.get('accommodation', 'nope')).resolves.toBeNull()
@@ -335,13 +335,27 @@ describe('get and list, for a type this build has no schema for', () => {
 
 describe('failures', () => {
   it('returns null for a missing document instead of throwing', async () => {
-    const spy = recorder(() => failure(404, 'PROJECT_NOT_FOUND'))
+    const spy = recorder(() => failure(404, 'NOT_FOUND'))
     const client = createClient({ env: ENVIRONMENT, fetchImplementation: spy.fetchImplementation })
 
     await expect(client.getPage('nope')).resolves.toBeNull()
     await expect(client.getPost('nope')).resolves.toBeNull()
     await expect(client.getProduct('nope')).resolves.toBeNull()
     await expect(client.getCollection('nope')).resolves.toBeNull()
+  })
+
+  /*
+   * The code was `PROJECT_NOT_FOUND` until 2026-08-20. This test is the reason
+   * the rename does not have to be deployed in a particular order: drop the
+   * old spelling and an API that has not been redeployed yet makes every
+   * missing page throw instead of rendering a 404.
+   */
+  it('still returns null for the pre-rename code, so deploy order cannot break a site', async () => {
+    const spy = recorder(() => failure(404, 'PROJECT_NOT_FOUND'))
+    const client = createClient({ env: ENVIRONMENT, fetchImplementation: spy.fetchImplementation })
+
+    await expect(client.getPage('nope')).resolves.toBeNull()
+    await expect(client.get('accommodation', 'nope')).resolves.toBeNull()
   })
 
   it('throws a typed error when the key is rejected', async () => {
@@ -356,7 +370,7 @@ describe('failures', () => {
   })
 
   it('does not swallow a 401 on a single-document read', async () => {
-    // The `null` shortcut is for PROJECT_NOT_FOUND only. A bad key that came
+    // The `null` shortcut is for the not-found codes only. A bad key that came
     // back as `null` would render an empty site instead of failing the build.
     const spy = recorder(() => failure(401, 'INVALID_KEY'))
     const client = createClient({ env: ENVIRONMENT, fetchImplementation: spy.fetchImplementation })

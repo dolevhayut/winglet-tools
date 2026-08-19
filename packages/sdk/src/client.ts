@@ -3,7 +3,7 @@ import { cacheTag, projectCacheTag } from '@product'
 import type { ClientConfig, EnvSource } from './config'
 import { assertServerRuntime, normaliseBaseUrl, readClientConfig, requirePreviewKey } from './config'
 import { CONTENT_TYPE_KEYS, isContentTypeKey } from './definitions'
-import { ApiResponseError } from './errors'
+import { ApiResponseError, isNotFoundCode } from './errors'
 import type { FetchImplementation, HttpOptions, RequestSpec } from './http'
 import { encodeSegment, requestJson, toValidationError } from './http'
 import { queryParams } from './query'
@@ -221,11 +221,15 @@ export function createClient(options: ClientOptions = {}): ContentClient {
     try {
       body = await requestJson(resolved.http, spec, wireSingleSchema)
     } catch (error: unknown) {
-      // The API says PROJECT_NOT_FOUND for a slug that does not exist in the
-      // caller's project — indistinguishable, by design, from one that belongs
-      // to another tenant. Either way it is "no such document" for this key, and
-      // a page that renders `notFound()` should not need a try/catch.
-      if (error instanceof ApiResponseError && error.code === 'PROJECT_NOT_FOUND') return null
+      // The API says NOT_FOUND for a slug that does not exist in the caller's
+      // project — indistinguishable, by design, from one that belongs to another
+      // tenant. Either way it is "no such document" for this key, and a page
+      // that renders `notFound()` should not need a try/catch.
+      //
+      // Matched through `isNotFoundCode` rather than by equality: the code was
+      // `PROJECT_NOT_FOUND` until 2026-08-20 and this line is exactly what the
+      // rename broke. Equality here is what made the deploy order load-bearing.
+      if (error instanceof ApiResponseError && isNotFoundCode(error.code)) return null
       throw error
     }
 
@@ -309,7 +313,7 @@ export function createClient(options: ClientOptions = {}): ContentClient {
     try {
       body = await requestJson(resolved.http, spec, wireSingleSchema)
     } catch (error: unknown) {
-      if (error instanceof ApiResponseError && error.code === 'PROJECT_NOT_FOUND') return null
+      if (error instanceof ApiResponseError && isNotFoundCode(error.code)) return null
       throw error
     }
 

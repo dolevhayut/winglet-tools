@@ -90,7 +90,7 @@ describe('getDocument', () => {
   it('surfaces a 404 as a CliError, not a thrown TypeError', async () => {
     const fetchImpl = fakeFetch(() => ({
       status: 404,
-      body: { error: { code: 'PROJECT_NOT_FOUND', message: 'No such document.' } },
+      body: { error: { code: 'NOT_FOUND', message: 'No such document.' } },
     }))
     let threw: unknown
     try {

@@ -10,15 +10,37 @@
 /** §9's error codes, plus the INTERNAL code the API adds for its own failures. */
 export const API_ERROR_CODES = [
   'INVALID_KEY',
-  'PROJECT_NOT_FOUND',
+  'NOT_FOUND',
   'LIMIT_EXCEEDED',
   'VALIDATION_FAILED',
   'RATE_LIMITED',
   'CLAIM_EXPIRED',
   'INTERNAL',
+  /*
+   * `NOT_FOUND` was called `PROJECT_NOT_FOUND` until 2026-08-20. It is kept here,
+   * last so it reads as the leftover it is, because THIS package is the reason
+   * the rename was a breaking change: 0.3.1 turns the code into `null` for a
+   * missing page, so an API that stopped sending it made every deployed site
+   * throw where it used to render a 404.
+   *
+   * Listing both is what makes the deploy ORDER stop mattering — this client is
+   * correct against an API on either side of the rename, so neither has to ship
+   * first. Removable once nothing is serving the old name.
+   */
+  'PROJECT_NOT_FOUND',
 ] as const
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number]
+
+/**
+ * The codes that mean "no such thing here" — both spellings, for the reason
+ * above. Anything reading `code` to decide 404-ness must use this, not equality.
+ */
+export const NOT_FOUND_CODES: readonly ApiErrorCode[] = ['NOT_FOUND', 'PROJECT_NOT_FOUND']
+
+export function isNotFoundCode(value: unknown): boolean {
+  return typeof value === 'string' && (NOT_FOUND_CODES as readonly string[]).includes(value)
+}
 
 export function isApiErrorCode(value: unknown): value is ApiErrorCode {
   return typeof value === 'string' && (API_ERROR_CODES as readonly string[]).includes(value)

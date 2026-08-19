@@ -21,12 +21,15 @@ import { CliError, EXIT } from './exit'
 /** §9's codes, plus the `INTERNAL` the API added in M2. */
 export const API_ERROR_CODES = [
   'INVALID_KEY',
-  'PROJECT_NOT_FOUND',
+  'NOT_FOUND',
   'LIMIT_EXCEEDED',
   'VALIDATION_FAILED',
   'RATE_LIMITED',
   'CLAIM_EXPIRED',
   'INTERNAL',
+  // Renamed from `PROJECT_NOT_FOUND` on 2026-08-20; still accepted so this CLI
+  // works against an API on either side of the rename. Both map to exit 1.
+  'PROJECT_NOT_FOUND',
 ] as const
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number]
