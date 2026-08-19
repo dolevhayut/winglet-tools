@@ -2,6 +2,7 @@ import type { ProjectModel } from '../api'
 import { indexDocument } from './document'
 import { brokenLinks } from './links'
 import { missingAlt } from './images'
+import { SEO_CHECKS } from './seo'
 import type { CheckDefinition, DocumentIndex, Finding, LintDocument } from './types'
 
 export { toLintDocuments } from './document'
@@ -48,7 +49,14 @@ export type {
  * they need — subject identity and Hebrew morphology — are not a tuning pass.
  */
 
-export const CHECKS: readonly CheckDefinition[] = [brokenLinks, missingAlt]
+/**
+ * M21.8 added four more, and they belong to the same rule rather than to a new
+ * one: a missing search description, a title that will be cut off at 60
+ * characters, and two pages claiming the same title are all facts about a
+ * value, verifiable without reading the language the value is written in. The
+ * fifth that was specified — thin content — is not here, and `seo.ts` says why.
+ */
+export const CHECKS: readonly CheckDefinition[] = [brokenLinks, missingAlt, ...SEO_CHECKS]
 
 export const CHECK_NAMES: readonly string[] = CHECKS.map((check) => check.name)
 

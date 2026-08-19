@@ -272,6 +272,270 @@ describe('missing-alt', () => {
 
 })
 
+/* ── the search fields (M21.8) ────────────────────────────────────────────── */
+
+describe('the seo checks', () => {
+  /*
+   * `stayRule` deliberately has NO seo field. It is the type that proves these
+   * checks read the model instead of assuming one: a rule is a title and a
+   * sentence, it is never a page, and reporting a missing search description on
+   * one is the finding that would teach an operator to skip the output.
+   *
+   * `landing` names its field `search` rather than `seo`, for the same reason
+   * the rest of the binary looks names up: the KIND is fixed by the schema, the
+   * name belongs to whoever defined the type.
+   */
+  const site = model(
+    contentType('page', [field('title', 'string'), field('seo', 'seo')]),
+    contentType('landing', [field('title', 'string'), field('search', 'seo')]),
+    contentType('stayRule', [field('title', 'string'), field('body', 'text')]),
+  )
+
+  const TITLE = 'בקתות אירוח בגליל העליון' // 24
+  const DESCRIPTION =
+    'בקתת ספא פרטית עם ג׳קוזי, נוף פתוח אל הכינרת וארוחת בוקר כפרית שמוגשת אל הבקתה. לזוגות בלבד, כניסה מגיל 18.' // 107
+
+  /** A string of exactly `length` characters, for the boundary cases. */
+  function chars(length: number): string {
+    return 'א'.repeat(length)
+  }
+
+  describe('missing-seo', () => {
+    it('finds a published page with no search title and no search description', () => {
+      const findings = lint([doc('page', 'home', { title: 'דף הבית' })], site, 'missing-seo')
+
+      expect(findings).toHaveLength(1)
+      expect(findings[0]?.message).toContain('no search title and no description')
+      expect(findings[0]?.locations[0]?.path).toBe('seo.title')
+    })
+
+    it('finds a page that has a title but no description', () => {
+      const findings = lint(
+        [doc('page', 'home', { seo: { title: TITLE } })],
+        site,
+        'missing-seo',
+      )
+
+      expect(findings).toHaveLength(1)
+      expect(findings[0]?.message).toContain('no search description')
+      expect(findings[0]?.locations[0]?.path).toBe('seo.description')
+    })
+
+    it('treats a blank string as no value at all', () => {
+      expect(
+        lint(
+          [doc('page', 'home', { seo: { title: '   ', description: DESCRIPTION } })],
+          site,
+          'missing-seo',
+        ),
+      ).toHaveLength(1)
+    })
+
+    it('stays silent on a type that has no search field', () => {
+      // The whole point. A stay rule cannot hold an seo value, so it can never
+      // be missing one.
+      expect(
+        lint([doc('stayRule', 'checkin', { title: 'שעת כניסה', body: 'מ-16:00' })], site, 'missing-seo'),
+      ).toEqual([])
+    })
+
+    it('stays silent when both are filled in', () => {
+      expect(
+        lint(
+          [doc('page', 'home', { seo: { title: TITLE, description: DESCRIPTION } })],
+          site,
+          'missing-seo',
+        ),
+      ).toEqual([])
+    })
+
+    it('reads the field by its kind, not by the name `seo`', () => {
+      const findings = lint([doc('landing', 'promo', { search: { title: TITLE } })], site, 'missing-seo')
+
+      expect(findings).toHaveLength(1)
+      expect(findings[0]?.locations[0]?.path).toBe('search.description')
+    })
+  })
+
+  describe('seo-title-length', () => {
+    it('finds a title too short to say anything', () => {
+      const findings = lint(
+        [doc('page', 'home', { seo: { title: 'בקתה', description: DESCRIPTION } })],
+        site,
+        'seo-title-length',
+      )
+
+      expect(findings).toHaveLength(1)
+      expect(findings[0]?.message).toContain('4-character')
+      expect(findings[0]?.locations[0]?.quote).toBe('בקתה')
+    })
+
+    it('finds a title that will be cut off', () => {
+      const findings = lint(
+        [doc('page', 'home', { seo: { title: chars(61), description: DESCRIPTION } })],
+        site,
+        'seo-title-length',
+      )
+
+      expect(findings).toHaveLength(1)
+      expect(findings[0]?.message).toContain('cut off')
+    })
+
+    it('stays silent at both boundaries', () => {
+      // 15 and 60 are IN range. An off-by-one here reports a title that is fine,
+      // which is the failure mode this whole file is tuned against.
+      expect(
+        lint(
+          [
+            doc('page', 'a', { seo: { title: chars(15) } }),
+            doc('page', 'b', { seo: { title: chars(60) } }),
+            doc('page', 'c', { seo: { title: TITLE } }),
+          ],
+          site,
+          'seo-title-length',
+        ),
+      ).toEqual([])
+    })
+
+    it('stays silent when there is no title, leaving that to missing-seo', () => {
+      // Two findings for one empty field is how an operator learns the output is
+      // padded.
+      expect(lint([doc('page', 'home', {})], site, 'seo-title-length')).toEqual([])
+    })
+
+    it('counts what a reader sees, not UTF-16 units', () => {
+      // 🌿 is two code units and one character. Counting units would report a
+      // 60-character title as 61.
+      expect(
+        lint([doc('page', 'home', { seo: { title: `🌿${chars(59)}` } })], site, 'seo-title-length'),
+      ).toEqual([])
+    })
+  })
+
+  describe('seo-description-length', () => {
+    it('finds a description too short to say anything', () => {
+      const findings = lint(
+        [doc('page', 'home', { seo: { title: TITLE, description: 'נוף לכינרת.' } })],
+        site,
+        'seo-description-length',
+      )
+
+      expect(findings).toHaveLength(1)
+      expect(findings[0]?.message).toContain('11-character')
+      expect(findings[0]?.locations[0]?.path).toBe('seo.description')
+    })
+
+    it('finds a description that will be cut off', () => {
+      expect(
+        lint(
+          [doc('page', 'home', { seo: { title: TITLE, description: chars(161) } })],
+          site,
+          'seo-description-length',
+        ),
+      ).toHaveLength(1)
+    })
+
+    it('stays silent at both boundaries and on a real one', () => {
+      expect(
+        lint(
+          [
+            doc('page', 'a', { seo: { description: chars(70) } }),
+            doc('page', 'b', { seo: { description: chars(160) } }),
+            doc('page', 'c', { seo: { description: DESCRIPTION } }),
+          ],
+          site,
+          'seo-description-length',
+        ),
+      ).toEqual([])
+    })
+  })
+
+  describe('duplicate-seo', () => {
+    it('reports one finding carrying every page that shares the title', () => {
+      const findings = lint(
+        [
+          doc('page', 'alpha', { seo: { title: TITLE } }),
+          doc('page', 'beta', { seo: { title: TITLE } }),
+          doc('page', 'gamma', { seo: { title: TITLE } }),
+        ],
+        site,
+        'duplicate-seo',
+      )
+
+      expect(findings).toHaveLength(1)
+      expect(findings[0]?.locations).toHaveLength(3)
+      expect(findings[0]?.locations.map((location) => location.slug)).toEqual([
+        'alpha',
+        'beta',
+        'gamma',
+      ])
+    })
+
+    it('stays silent across types, which is the deliberate miss', () => {
+      // A landing page copied from a page IS a real duplicate and is not
+      // reported. The reason is the pair this rule exists to suppress: a
+      // settings singleton's seo is the site-wide default, and the home page
+      // matching it is the default working, not two pages fighting. Nothing in
+      // the model says which types are pages, so the two cases are the same
+      // shape. Measured on the reference site, unrestricted matching found one
+      // collision and it was that pair.
+      expect(
+        lint(
+          [
+            doc('page', 'alpha', { seo: { title: TITLE } }),
+            doc('landing', 'promo', { search: { title: TITLE } }),
+          ],
+          site,
+          'duplicate-seo',
+        ),
+      ).toEqual([])
+    })
+
+    it('names the type in the message, because the type is the scope', () => {
+      const findings = lint(
+        [
+          doc('landing', 'promo', { search: { title: TITLE } }),
+          doc('landing', 'promo-2', { search: { title: TITLE } }),
+        ],
+        site,
+        'duplicate-seo',
+      )
+
+      expect(findings).toHaveLength(1)
+      expect(findings[0]?.message).toContain('2 landing documents')
+      expect(findings[0]?.locations[0]?.path).toBe('search.title')
+    })
+
+    it('stays silent on titles that differ only in case or in spacing', () => {
+      // Deliberate miss. Case-folding would catch a few more and would also
+      // start reporting pairs a person looking at both would call different —
+      // Hebrew has no case, so the rule would only ever fire on Latin brand
+      // names, which are exactly where the capitalisation is the point.
+      expect(
+        lint(
+          [
+            doc('page', 'alpha', { seo: { title: 'Nofim Guesthouse' } }),
+            doc('page', 'beta', { seo: { title: 'nofim guesthouse' } }),
+          ],
+          site,
+          'duplicate-seo',
+        ),
+      ).toEqual([])
+    })
+
+    it('stays silent when the titles are simply absent', () => {
+      // Two empty fields are not two pages claiming the same name.
+      expect(
+        lint(
+          [doc('page', 'alpha', {}), doc('page', 'beta', { seo: { description: DESCRIPTION } })],
+          site,
+          'duplicate-seo',
+        ),
+      ).toEqual([])
+    })
+  })
+})
+
 /* ── orphan documents ─────────────────────────────────────────────────────── */
 
 /* ── the runner ───────────────────────────────────────────────────────────── */

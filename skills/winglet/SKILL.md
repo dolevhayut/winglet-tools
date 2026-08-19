@@ -269,12 +269,31 @@ holds a document — find it with `list_documents` and update it instead.
 ## Checking your work
 
 ```bash
-npx winglet lint
+npx winglet lint                       # every check
+npx winglet lint --check missing-seo   # one of them
+npx winglet lint --json                # for you to parse
 ```
 
-Reports broken internal links and images published with no description. It is
-tuned to stay silent when unsure, so a finding is worth acting on. Run it after
-a bulk import — that is what it was built for.
+Six checks, each one a fact about a value rather than a judgement about prose:
+
+| Check | Reports |
+|---|---|
+| `broken-links` | an internal link or reference pointing at nothing |
+| `missing-alt` | an image published with no description |
+| `missing-seo` | a document with no search title, or no search description |
+| `seo-title-length` | a search title outside 15–60 characters |
+| `seo-description-length` | a search description outside 70–160 characters |
+| `duplicate-seo` | two documents **of one type** sharing a search title |
+
+It is tuned to stay silent when unsure — three checks that were built for M16
+were withdrawn because they were wrong more often than right — so a finding is
+worth acting on. **Run it before you hand over the claim link.** Every finding
+here is one an owner cannot see from inside the studio and would not know to
+look for; a duplicate title in particular looks correct on both pages and is
+only wrong as a pair.
+
+`lint` only reads. It never changes anything: fix a finding with
+`winglet edit <id> --set seo.description=…` and then `winglet publish <id>`.
 
 ## Things that will bite you
 
