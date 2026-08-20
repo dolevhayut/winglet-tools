@@ -63,7 +63,7 @@ export const MCP_PACKAGE = `${PRODUCT_SLUG}-mcp` as const
 export const CLI_BIN = PRODUCT_SLUG
 
 /** The version of the client packages a fresh `init` wires a project to. */
-export const CLIENT_VERSION = '0.3.1' as const
+export const CLIENT_VERSION = '0.4.0' as const
 
 /**
  * ONE BOOLEAN, because the switch has to be atomic and it has to be reversible.
